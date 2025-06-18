@@ -1,4 +1,4 @@
-# lib/ruby_flow.rb
+# lib/drzyr.rb
 require 'sinatra/base'
 require 'faye/websocket'
 require 'json'
@@ -7,7 +7,7 @@ require 'securerandom'
 require 'date'
 
 # A lightweight framework for creating interactive web UIs with Ruby.
-module RubyFlow
+module Drzyr
   # --- Constants for WebSocket communication ---
   MSG_TYPE_RENDER = 'render'.freeze
   MSG_TYPE_CLIENT_READY = 'client_ready'.freeze
@@ -186,13 +186,13 @@ module RubyFlow
       ws.on :message do |event|
         data = JSON.parse(event.data)
         path = data['path']
-        RubyFlow.state.connections[ws] = path
+        Drzyr.state.connections[ws] = path
         handle_message(data, path, ws)
       end
 
       ws.on :close do |_event|
-        RubyFlow.state.connections.delete(ws)
-        RubyFlow.state.pending_button_presses.delete(ws)
+        Drzyr.state.connections.delete(ws)
+        Drzyr.state.pending_button_presses.delete(ws)
         ws = nil
       end
 
@@ -202,7 +202,7 @@ module RubyFlow
     private
 
     def handle_message(data, path, ws)
-      app_state = RubyFlow.state
+      app_state = Drzyr.state
       msg_type = data['type']
       widget_id = data['widget_id']
 
@@ -214,7 +214,7 @@ module RubyFlow
       end
 
       if [MSG_TYPE_CLIENT_READY, MSG_TYPE_NAVIGATE, MSG_TYPE_UPDATE, MSG_TYPE_BUTTON_PRESS].include?(msg_type)
-        elements = RubyFlow.rerun_page(path, ws)
+        elements = Drzyr.rerun_page(path, ws)
         ws.send({ type: MSG_TYPE_RENDER, elements: elements }.to_json)
       end
     end

@@ -1,8 +1,8 @@
 # app.rb
-require_relative 'lib/ruby_flow'
+require_relative 'lib/drzyr'
 
-RubyFlow.run do
-  RubyFlow.page '/' do
+Drzyr.run do
+  Drzyr.page '/' do
 
     # --- Section 1: Headings and Paragraphs ---
     # Demonstrates: h1, p, h6
@@ -141,7 +141,7 @@ RubyFlow.run do
     p "Over a term of #{term_years.to_i} years, your total repayment would be £#{(monthly_payment * term_months).round(2)}."
   end
 
-  RubyFlow.page "/c" do
+  Drzyr.page "/c" do
     h1 "Reactive Dashboard"
     p "Change the values in the inputs to see the UI update in real time."
 
