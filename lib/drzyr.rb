@@ -5,6 +5,7 @@ require 'json'
 require 'erb'
 require 'securerandom'
 require 'date'
+require 'thread' # For Mutex
 
 # A lightweight framework for creating interactive web UIs with Ruby.
 module Drzyr
@@ -17,13 +18,18 @@ module Drzyr
 
   # Manages the application's state.
   class StateManager
-    attr_accessor :connections, :pages, :state, :pending_button_presses
+    attr_reader :connections, :pages, :state, :pending_button_presses, :lock
 
     def initialize
       @connections = {}
       @pages = {}
       @state = Hash.new { |h, k| h[k] = {} }
       @pending_button_presses = Hash.new { |h, k| h[k] = {} }
+      @lock = Mutex.new # Protects shared state in multi-threaded environments
+    end
+
+    def synchronized(&block)
+      @lock.synchronize(&block)
     end
   end
 
@@ -48,19 +54,14 @@ module Drzyr
 
   # --- Internal Logic & UI Building ---
 
-  # Helper class for the `columns` layout component.
   class ColumnBuilder
     attr_reader :columns
-
     def initialize(ui_builder)
       @ui_builder = ui_builder
       @columns = []
     end
-
     def column(&block)
-      # Use the main UIBuilder to capture elements created inside the block
-      column_elements = @ui_builder.capture_elements(&block)
-      @columns << column_elements
+      @columns << @ui_builder.capture_elements(&block)
     end
   end
 
@@ -74,29 +75,21 @@ module Drzyr
       @ui_elements = []
     end
 
-    # --- Start of Public DSL Methods ---
-
-    (1..6).each do |level|
-      define_method("h#{level}") { |text| add_element("heading#{level}", text: text) }
-    end
-
-    def p(text)
-      add_element('paragraph', text: text)
-    end
-
-    def table(data, headers: [])
-      add_element('table', data: data, headers: headers)
-    end
+    (1..6).each { |l| define_method("h#{l}") { |text| add_element("heading#{l}", text: text) } }
+    def p(text); add_element('paragraph', text: text); end
+    def table(data, headers: []); add_element('table', data: data, headers: headers); end
 
     def button(id:, text:)
       add_element('button', id: id, text: text)
-      @pending_presses.delete(id) || false
+      # Atomically check for and remove the pending press for this specific button.
+      # This ensures the button press is consumed only once and doesn't affect other components.
+      @pending_presses.delete(id)
     end
 
     def slider(id:, label:, min:, max:, step: 1, default: nil)
-      value = @page_state[id] || default || min
+      value = @page_state.fetch(id, default || min).to_f
       add_input_element('slider', id, label, value.to_s, min: min, max: max, step: step)
-      value.to_f
+      value
     end
 
     def text_input(id:, label:, default: '')
@@ -106,7 +99,9 @@ module Drzyr
 
     def number_input(id:, label:, default: 0)
       value = @page_state.fetch(id, default)
+      numeric_value = value.to_s.include?('.') ? value.to_f : value.to_i
       add_input_element('number_input', id, label, value.to_s)
+      numeric_value
     end
 
     def password_input(id:, label:, default: '')
@@ -114,9 +109,11 @@ module Drzyr
       add_input_element('password_input', id, label, value)
     end
 
-    def date_input(id:, label:, default: Date.today.to_s)
-      value = @page_state.fetch(id, default)
-      add_input_element('date_input', id, label, value)
+    def date_input(id:, label:, default: nil)
+      default_str = default || Date.today.to_s
+      value_str = @page_state.fetch(id, default_str)
+      add_input_element('date_input', id, label, value_str)
+      Date.parse(value_str) rescue Date.parse(default_str)
     end
 
     def checkbox(id:, label:)
@@ -135,37 +132,28 @@ module Drzyr
       add_element('columns_container', columns: builder.columns)
     end
 
-    # --- Start of Public Helper Methods ---
-
     def capture_elements(&block)
-      original_elements = @ui_elements
-      @ui_elements = []
+      original_elements, @ui_elements = @ui_elements, []
       instance_exec(&block)
-      captured = @ui_elements
-      @ui_elements = original_elements
+      captured, @ui_elements = @ui_elements, original_elements
       captured
     end
 
-    # --- Start of Private Methods ---
     private
-
-    def add_element(type, attributes)
-      @ui_elements << attributes.merge(type: type)
-    end
-
-    def add_input_element(type, id, label, value, **extra_attrs)
-      attributes = { id: id, label: label, value: value, **extra_attrs }
-      add_element(type, attributes)
-      value
-    end
+    def add_element(type, attributes); @ui_elements << attributes.merge(type: type); end
+    def add_input_element(type, id, label, value, **attrs); add_element(type, {id:id, label:label, value:value, **attrs}); value; end
   end
 
   def rerun_page(path, ws)
     page_block = state.pages[path]
     return [] unless page_block
 
-    page_state = state.state[path]
-    pending_presses = state.pending_button_presses.fetch(ws, {})
+    page_state, pending_presses = nil, nil
+    state.synchronized do
+      page_state = state.state[path]
+      # Crucially, we fetch a *copy* of the pending presses for this specific run.
+      pending_presses = state.pending_button_presses.fetch(ws, {}).dup
+    end
 
     builder = UIBuilder.new(page_state, pending_presses)
     builder.instance_exec(&page_block)
@@ -173,50 +161,51 @@ module Drzyr
   end
 
   # --- Sinatra Web Server ---
-
   class Server < Sinatra::Base
     set :public_folder, File.expand_path('public', __dir__)
     set :views, File.expand_path('public', __dir__)
 
     get '/websocket' do
-      halt(400, 'Invalid request') unless Faye::WebSocket.websocket?(request.env)
-
+      halt(400) unless Faye::WebSocket.websocket?(request.env)
       ws = Faye::WebSocket.new(request.env)
+
+      ws.on :open do
+        Drzyr.state.synchronized { Drzyr.state.connections[ws] = nil }
+      end
 
       ws.on :message do |event|
         data = JSON.parse(event.data)
         path = data['path']
-        Drzyr.state.connections[ws] = path
-        handle_message(data, path, ws)
+        Drzyr.state.synchronized { Drzyr.state.connections[ws] ||= path } if path
+        handle_message(data, path, ws) if path
       end
 
-      ws.on :close do |_event|
-        Drzyr.state.connections.delete(ws)
-        Drzyr.state.pending_button_presses.delete(ws)
+      ws.on :close do
+        Drzyr.state.synchronized do
+          Drzyr.state.connections.delete(ws)
+          Drzyr.state.pending_button_presses.delete(ws)
+        end
         ws = nil
       end
-
       ws.rack_response
     end
 
     private
-
     def handle_message(data, path, ws)
       app_state = Drzyr.state
-      msg_type = data['type']
-      widget_id = data['widget_id']
-
-      case msg_type
-      when MSG_TYPE_UPDATE
-        app_state.state[path][widget_id] = data['value']
-      when MSG_TYPE_BUTTON_PRESS
-        app_state.pending_button_presses[ws][widget_id] = true
+      app_state.synchronized do
+        case data['type']
+        when MSG_TYPE_UPDATE
+          app_state.state[path][data['widget_id']] = data['value']
+        when MSG_TYPE_BUTTON_PRESS
+          # Ensure the hash for the websocket connection exists
+          app_state.pending_button_presses[ws] ||= {}
+          app_state.pending_button_presses[ws][data['widget_id']] = true
+        end
       end
 
-      if [MSG_TYPE_CLIENT_READY, MSG_TYPE_NAVIGATE, MSG_TYPE_UPDATE, MSG_TYPE_BUTTON_PRESS].include?(msg_type)
-        elements = Drzyr.rerun_page(path, ws)
-        ws.send({ type: MSG_TYPE_RENDER, elements: elements }.to_json)
-      end
+      elements = Drzyr.rerun_page(path, ws)
+      ws.send({ type: MSG_TYPE_RENDER, elements: elements }.to_json) if ws
     end
   end
 end

@@ -29,10 +29,9 @@ Drzyr.run do
       options: ticket_prices.keys
     )
 
-    quantity_str = number_input(id: 'quantity', label: 'Number of Tickets:', default: 1)
-    quantity = quantity_str.to_i
+    # With the new framework, number_input returns an Integer or Float directly
+    quantity = number_input(id: 'quantity', label: 'Number of Tickets:', default: 1)
 
-    # Reactive calculation
     total_cost = ticket_prices[ticket_type] * quantity
     h4 "Subtotal: £#{total_cost}"
 
