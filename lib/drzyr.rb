@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 # lib/drzyr.rb
 require 'sinatra/base'
 require 'faye/websocket'
@@ -7,15 +5,16 @@ require 'json'
 require 'erb'
 require 'securerandom'
 require 'date'
+require 'thread' # For Mutex
 
 # A lightweight framework for creating interactive web UIs with Ruby.
 module Drzyr
   # --- Constants for WebSocket communication ---
-  MSG_TYPE_RENDER = 'render'
-  MSG_TYPE_CLIENT_READY = 'client_ready'
-  MSG_TYPE_NAVIGATE = 'navigate'
-  MSG_TYPE_UPDATE = 'update'
-  MSG_TYPE_BUTTON_PRESS = 'button_press'
+  MSG_TYPE_RENDER = 'render'.freeze
+  MSG_TYPE_CLIENT_READY = 'client_ready'.freeze
+  MSG_TYPE_NAVIGATE = 'navigate'.freeze
+  MSG_TYPE_UPDATE = 'update'.freeze
+  MSG_TYPE_BUTTON_PRESS = 'button_press'.freeze
 
   # Manages the application's state.
   class StateManager
@@ -64,20 +63,18 @@ module Drzyr
       @tab_labels = []
     end
 
-    def tab(label, &block)
+    def tab(label)
       @tab_labels << label
-      @tabs_content[label] = @ui_builder.capture_elements(&block)
+      @tabs_content[label] = @ui_builder.capture_elements { yield }
     end
   end
 
   class ColumnBuilder
     attr_reader :columns
-
     def initialize(ui_builder)
       @ui_builder = ui_builder
       @columns = []
     end
-
     def column(&block)
       @columns << @ui_builder.capture_elements(&block)
     end
@@ -109,39 +106,29 @@ module Drzyr
     end
 
     (1..6).each { |l| define_method("h#{l}") { |text| add_element("heading#{l}", text: text) } }
-    def p(text)
-      add_element('paragraph', text: text)
+    def p(text); add_element('paragraph', text: text); end
+    def table(data, headers: []); add_element('table', data: data, headers: headers); end
+    def data_table(id:, data:, columns:)
+      add_element('data_table', id: id, data: data, columns: columns)
+    end
+    def alert(text, style: :primary); add_element('alert', text: text, style: style); end
+    def image(src, caption: nil); add_element('image', src: src, caption: caption); end
+    def code(text, language: nil); add_element('code', text: text, language: language); end
+    def latex(text); add_element('latex', text: text); end
+    def spinner(label: nil); add_element('spinner', label: label); end
+    def divider; add_element('divider', {}); end
+
+    def cache(key)
+      cache_key = "cache_#{key}"
+      if @page_state.key?(cache_key)
+        return @page_state[cache_key]
+      end
+      result = yield
+      @page_state[cache_key] = result
+      result
     end
 
-    def table(data, headers: [])
-      add_element('table', data: data, headers: headers)
-    end
-
-    def alert(text, style: :primary)
-      add_element('alert', text: text, style: style)
-    end
-
-    def image(src, caption: nil)
-      add_element('image', src: src, caption: caption)
-    end
-
-    def code(text, language: nil)
-      add_element('code', text: text, language: language)
-    end
-
-    def latex(text)
-      add_element('latex', text: text)
-    end
-
-    def spinner(label: nil)
-      add_element('spinner', label: label)
-    end
-
-    def divider
-      add_element('divider', {})
-    end
-
-    def theme_toggle(id:, label: 'Dark Mode', default_dark: false)
+    def theme_toggle(id:, label: "Dark Mode", default_dark: false)
       is_dark = checkbox(id: id, label: label)
       theme = is_dark ? 'dark' : 'light'
       @page_state['theme'] = theme
@@ -150,10 +137,17 @@ module Drzyr
     end
 
     def chart(id:, data:, options: {})
-      add_element('chart', id: id, data: data, options: options)
+      default_options = {
+        animation: {
+          duration: 0
+        },
+        responsive: true
+      }
+      final_options = deep_merge(default_options, options)
+      add_element('chart', id: id, data: data, options: final_options)
     end
 
-    def expander(label:, expanded: false, &block)
+    def expander(label:, expanded: false)
       expander_id = "expander_#{label.gsub(/\s+/, '_').downcase}"
       is_expanded = @page_state.fetch(expander_id, expanded)
 
@@ -162,12 +156,12 @@ module Drzyr
         @page_state[expander_id] = is_expanded
       end
 
-      content = is_expanded ? capture_elements(&block) : []
+      content = is_expanded ? capture_elements { yield } : []
       add_element('expander', id: expander_id, label: label, expanded: is_expanded, content: content)
     end
 
-    def form_group(label:, &block)
-      content = capture_elements(&block)
+    def form_group(label:)
+      content = capture_elements { yield }
       add_element('form_group', label: label, content: content)
     end
 
@@ -203,11 +197,7 @@ module Drzyr
       default_str = default || Date.today.to_s
       value_str = @page_state.fetch(id, default_str)
       add_input_element('date_input', id, label, value_str, error: error)
-      begin
-        Date.parse(value_str)
-      rescue StandardError
-        Date.parse(default_str)
-      end
+      Date.parse(value_str) rescue Date.parse(default_str)
     end
 
     def checkbox(id:, label:, error: nil)
@@ -224,10 +214,6 @@ module Drzyr
       value = @page_state.fetch(id, default)
       add_input_element('textarea', id, label, value, error: error, rows: rows)
       value
-    end
-
-    def data_table(id:, data:, columns:)
-      add_element('data_table', id: id, data: data, columns: columns)
     end
 
     def multi_select(id:, label:, options:, default: [], error: nil)
@@ -260,32 +246,48 @@ module Drzyr
       end
 
       add_element('tabs',
-                  id: tabs_id,
-                  labels: tab_builder.tab_labels,
-                  active_tab: active_tab,
-                  content: tab_builder.tabs_content[active_tab])
+        id: tabs_id,
+        labels: tab_builder.tab_labels,
+        active_tab: active_tab,
+        content: tab_builder.tabs_content[active_tab]
+      )
     end
 
-    def columns
+    def columns(&block)
       builder = ColumnBuilder.new(self)
       yield builder
       add_element('columns_container', columns: builder.columns)
     end
 
     def capture_elements(&block)
-      target_array = @capturing_sidebar ? @sidebar_elements : @ui_elements
-
-      original_elements = @ui_elements
+      original_ui_elements = @ui_elements
+      original_sidebar_elements = @sidebar_elements
       @ui_elements = []
-      instance_exec(&block)
-      captured = @ui_elements
-      @ui_elements = original_elements
+      @sidebar_elements = []
 
-      target_array.concat(captured)
+      instance_exec(&block)
+
+      captured = @capturing_sidebar ? @sidebar_elements : @ui_elements
+
+      # Restore the original element arrays
+      @ui_elements = original_ui_elements
+      @sidebar_elements = original_sidebar_elements
+
+      # Return the captured elements without adding them to the main list.
       captured
     end
 
     private
+
+    def deep_merge(h1, h2)
+      h1.merge(h2) do |key, old_val, new_val|
+        if old_val.is_a?(Hash) && new_val.is_a?(Hash)
+          deep_merge(old_val, new_val)
+        else
+          new_val
+        end
+      end
+    end
 
     def add_element(type, attributes)
       target_array = @capturing_sidebar ? @sidebar_elements : @ui_elements
@@ -293,7 +295,7 @@ module Drzyr
     end
 
     def add_input_element(type, id, label, value, error: nil, **attrs)
-      add_element(type, { id: id, label: label, value: value, error: error, **attrs })
+      add_element(type, {id:id, label:label, value:value, error:error, **attrs})
       value
     end
   end
@@ -302,9 +304,7 @@ module Drzyr
     page_block = state.pages[path]
     return {} unless page_block
 
-    elements = nil
-    sidebar_elements = nil
-    navbar_config = nil
+    elements, sidebar_elements, navbar_config = nil, nil, nil
     state.synchronized do
       page_state = state.state[path]
       pending_presses_for_ws = state.pending_button_presses.fetch(ws, {})
@@ -352,7 +352,6 @@ module Drzyr
     end
 
     private
-
     def handle_message(data, path, ws)
       app_state = Drzyr.state
       app_state.synchronized do
@@ -366,7 +365,7 @@ module Drzyr
       end
 
       result = Drzyr.rerun_page(path, ws)
-      ws&.send({ type: MSG_TYPE_RENDER, **result }.to_json)
+      ws.send({ type: MSG_TYPE_RENDER, **result }.to_json) if ws
     end
   end
 end

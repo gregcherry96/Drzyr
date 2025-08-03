@@ -101,6 +101,15 @@ body {
   padding: 1rem 0;
 }
 
+/* --- Data Table Placeholder --- */
+/* Reserves space for the table while it loads to prevent page jump */
+.data-table-placeholder {
+  min-height: 300px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
 /* --- Dark Mode Component Overrides --- */
 .dark-mode .form-input,
 .dark-mode .form-select,
