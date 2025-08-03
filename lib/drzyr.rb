@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # lib/drzyr.rb
 require 'sinatra/base'
 require 'faye/websocket'
@@ -5,24 +7,36 @@ require 'json'
 require 'erb'
 require 'securerandom'
 require 'date'
-require 'thread'
 
 # --- Top-Level DSL Methods (Sinatra-style) ---
-def get(path, &block); Drzyr.register_page(path, :get, &block); end
-def post(path, &block); Drzyr.register_page(path, :post, &block); end
-def react(path, &block); Drzyr.register_page(path, :react, &block); end
+def get(path, &block)
+  Drzyr.register_page(path, :get, &block)
+end
+
+def post(path, &block)
+  Drzyr.register_page(path, :post, &block)
+end
+
+def react(path, &block)
+  Drzyr.register_page(path, :react, &block)
+end
 
 # A lightweight framework for creating interactive web UIs with Ruby.
 module Drzyr
   class StateManager
     attr_reader :connections, :pages, :state, :pending_button_presses, :lock
+
     def initialize
-      @connections, @pages = {}, {}
+      @connections = {}
+      @pages = {}
       @state = Hash.new { |h, k| h[k] = Hash.new { |h2, k2| h2[k2] = {} } }
       @pending_button_presses = Hash.new { |h, k| h[k] = {} }
       @lock = Mutex.new
     end
-    def synchronized(&block); @lock.synchronize(&block); end
+
+    def synchronized(&block)
+      @lock.synchronize(&block)
+    end
   end
 
   class HtmlRenderer
@@ -30,7 +44,6 @@ module Drzyr
       elements.map { |el| render_element(el) }.join("\n")
     end
 
-    private
     def self.render_element(el)
       sanitized_text = el[:text].to_s.gsub('<', '&lt;').gsub('>', '&gt;')
 
@@ -47,18 +60,19 @@ module Drzyr
       when 'alert'
         "<div class='toast toast-#{el[:style]}'>#{sanitized_text}</div>"
       when 'image'
-        caption_html = el[:caption] ? "<figcaption class='figure-caption text-center'>#{el[:caption]}</figcaption>" : ""
+        caption_html = el[:caption] ? "<figcaption class='figure-caption text-center'>#{el[:caption]}</figcaption>" : ''
         "<figure class='figure'><img class='img-responsive' src='#{el[:src]}'>#{caption_html}</figure>"
       when 'link'
         "<a href='#{el[:href]}'>#{sanitized_text}</a>"
       else
-        ""
+        ''
       end
     end
   end
 
   class NavbarBuilder
     attr_reader :elements
+
     def initialize(page_state)
       @page_state = page_state
       @elements = []
@@ -75,10 +89,13 @@ module Drzyr
 
   class TabBuilder
     attr_reader :tabs_content, :tab_labels
+
     def initialize(ui_builder)
       @ui_builder = ui_builder
-      @tabs_content, @tab_labels = {}, []
+      @tabs_content = {}
+      @tab_labels = []
     end
+
     def tab(label, &block)
       @tab_labels << label
       @tabs_content[label] = @ui_builder.capture_elements(&block)
@@ -87,10 +104,12 @@ module Drzyr
 
   class ColumnBuilder
     attr_reader :columns
+
     def initialize(ui_builder)
       @ui_builder = ui_builder
       @columns = []
     end
+
     def column(&block)
       @columns << @ui_builder.capture_elements(&block)
     end
@@ -100,9 +119,12 @@ module Drzyr
     attr_reader :ui_elements, :sidebar_elements, :navbar_config
 
     def initialize(page_state, pending_presses)
-      @page_state, @pending_presses = page_state, pending_presses
-      @ui_elements, @sidebar_elements = [], []
-      @capturing_sidebar, @navbar_config = false, nil
+      @page_state = page_state
+      @pending_presses = pending_presses
+      @ui_elements = []
+      @sidebar_elements = []
+      @capturing_sidebar = false
+      @navbar_config = nil
     end
 
     def navbar(&block)
@@ -111,7 +133,7 @@ module Drzyr
       @navbar_config = navbar_builder.elements
     end
 
-    def sidebar(&block)
+    def sidebar
       original_capturing_sidebar = @capturing_sidebar
       @capturing_sidebar = true
       yield
@@ -124,25 +146,55 @@ module Drzyr
         add_element("heading#{level}", text: text, id: options[:id])
       end
     end
-    def link(text, href:); add_element('link', text: text, href: href); end
-    def p(text); add_element('paragraph', text: text); end
-    def table(data, headers: []); add_element('table', data: data, headers: headers); end
-    def data_table(id:, data:, columns:); add_element('data_table', id: id, data: data, columns: columns); end
-    def alert(text, style: :primary); add_element('alert', text: text, style: style); end
-    def image(src, caption: nil); add_element('image', src: src, caption: caption); end
-    def code(text, language: nil); add_element('code', text: text, language: language); end
-    def latex(text); add_element('latex', text: text); end
-    def spinner(label: nil); add_element('spinner', label: label); end
-    def divider; add_element('divider', {}); end
+    def link(text, href:)
+      add_element('link', text: text, href: href)
+    end
 
-    def cache(key, &block)
+    def p(text)
+      add_element('paragraph', text: text)
+    end
+
+    def table(data, headers: [])
+      add_element('table', data: data, headers: headers)
+    end
+
+    def data_table(id:, data:, columns:)
+      add_element('data_table', id: id, data: data, columns: columns)
+    end
+
+    def alert(text, style: :primary)
+      add_element('alert', text: text, style: style)
+    end
+
+    def image(src, caption: nil)
+      add_element('image', src: src, caption: caption)
+    end
+
+    def code(text, language: nil)
+      add_element('code', text: text, language: language)
+    end
+
+    def latex(text)
+      add_element('latex', text: text)
+    end
+
+    def spinner(label: nil)
+      add_element('spinner', label: label)
+    end
+
+    def divider
+      add_element('divider', {})
+    end
+
+    def cache(key)
       cache_key = "cache_#{key}"
       return @page_state[cache_key] if @page_state.key?(cache_key)
+
       result = yield
       @page_state[cache_key] = result
     end
 
-    def theme_toggle(id:, label: "Dark Mode", default_dark: false)
+    def theme_toggle(id:, label: 'Dark Mode', default_dark: false)
       is_dark = checkbox(id: id, label: label)
       theme = is_dark ? 'dark' : 'light'
       @page_state['theme'] = theme
@@ -172,7 +224,10 @@ module Drzyr
       add_element('form_group', label: label, content: content)
     end
 
-    def button(id:, text:); add_element('button', id: id, text: text); @pending_presses.delete(id); end
+    def button(id:, text:)
+      add_element('button', id: id, text: text)
+      @pending_presses.delete(id)
+    end
 
     def slider(id:, label:, min:, max:, step: 1, default: nil, error: nil)
       value = @page_state.fetch(id, default || min).to_f
@@ -201,7 +256,11 @@ module Drzyr
       default_str = default || Date.today.to_s
       value_str = @page_state.fetch(id, default_str)
       add_input_element('date_input', id, label, value_str, error: error)
-      Date.parse(value_str) rescue Date.parse(default_str)
+      begin
+        Date.parse(value_str)
+      rescue StandardError
+        Date.parse(default_str)
+      end
     end
 
     def date_range_picker(id:, label:, default: nil, error: nil)
@@ -212,7 +271,11 @@ module Drzyr
 
       add_input_element('date_range_picker', id, label, value_str, error: error)
 
-      value_str.split(' - ').map { |d| Date.parse(d) rescue nil }.compact
+      value_str.split(' - ').map do |d|
+        Date.parse(d)
+      rescue StandardError
+        nil
+      end.compact
     end
 
     def checkbox(id:, label:, error: nil)
@@ -245,7 +308,7 @@ module Drzyr
       value
     end
 
-    def tabs(&block)
+    def tabs
       tab_builder = TabBuilder.new(self)
       yield tab_builder
       tabs_id = "tabs_#{tab_builder.tab_labels.join.hash.abs}"
@@ -257,28 +320,34 @@ module Drzyr
           @page_state[tabs_id] = active_tab
         end
       end
-      add_element('tabs', id: tabs_id, labels: tab_builder.tab_labels, active_tab: active_tab, content: tab_builder.tabs_content[active_tab])
+      add_element('tabs', id: tabs_id, labels: tab_builder.tab_labels, active_tab: active_tab,
+                          content: tab_builder.tabs_content[active_tab])
     end
 
-    def columns(&block)
+    def columns
       builder = ColumnBuilder.new(self)
       yield builder
       add_element('columns_container', columns: builder.columns)
     end
 
     def capture_elements(&block)
-      original_ui_elements, @ui_elements = @ui_elements, []
-      original_sidebar_elements, @sidebar_elements = @sidebar_elements, []
+      original_ui_elements = @ui_elements
+      @ui_elements = []
+      original_sidebar_elements = @sidebar_elements
+      @sidebar_elements = []
       instance_exec(&block)
       captured = @capturing_sidebar ? @sidebar_elements : @ui_elements
-      @ui_elements, @sidebar_elements = original_ui_elements, original_sidebar_elements
+      @ui_elements = original_ui_elements
+      @sidebar_elements = original_sidebar_elements
       captured
     end
 
     private
 
     def deep_merge(h1, h2)
-      h1.merge(h2) { |key, old_val, new_val| old_val.is_a?(Hash) && new_val.is_a?(Hash) ? deep_merge(old_val, new_val) : new_val }
+      h1.merge(h2) do |_key, old_val, new_val|
+        old_val.is_a?(Hash) && new_val.is_a?(Hash) ? deep_merge(old_val, new_val) : new_val
+      end
     end
 
     def add_element(type, attributes)
@@ -287,7 +356,7 @@ module Drzyr
     end
 
     def add_input_element(type, id, label, value, error: nil, **attrs)
-      add_element(type, {id:id, label:label, value:value, error:error, **attrs})
+      add_element(type, { id: id, label: label, value: value, error: error, **attrs })
       value
     end
   end
@@ -318,35 +387,32 @@ module Drzyr
 
   module_function
 
-  def state; @state ||= StateManager.new; end
-  def register_page(path, type, &block); state.pages[path] = { type: type, block: block }; end
+  def state
+    @state ||= StateManager.new
+  end
+
+  def register_page(path, type, &block)
+    state.pages[path] = { type: type, block: block }
+  end
 
   def run!
-    puts "\e[35m"
-    puts " ____                _"
-    puts "|  _ \\ _ __ __ _  __| |_ __"
-    puts "| | | | '__/ _` |/ _` | '__|"
-    puts "| |_| | | | (_| | (_| | |"
-    puts "|____/|_|  \\__,_|\\__,_|_|"
-    puts "\e[0m"
-    puts
-    Logger.info "Starting Drzyr server..."
+    Logger.info 'Starting Drzyr server...'
 
     state.pages.each do |path, config|
+      handler = proc do
+        builder = UIBuilder.new({}, {}) # Initial render is always stateless
+        builder.instance_exec(&config[:block])
+        server_rendered_data = {
+          main_content: HtmlRenderer.render(builder.ui_elements),
+          sidebar_content: HtmlRenderer.render(builder.sidebar_elements),
+          navbar: builder.navbar_config
+        }
+        erb :index, locals: { server_rendered: server_rendered_data }
+      end
+
       case config[:type]
-      when :react
-        Server.get(path) { erb :index, locals: { server_rendered: {} } }
-      when :get
-        Server.get(path) do
-          builder = UIBuilder.new({}, {})
-          builder.instance_exec(&config[:block])
-          server_rendered_data = {
-            main_content: HtmlRenderer.render(builder.ui_elements),
-            sidebar_content: HtmlRenderer.render(builder.sidebar_elements),
-            navbar: builder.navbar_config
-          }
-          erb :index, locals: { server_rendered: server_rendered_data }
-        end
+      when :react, :get
+        Server.get(path, &handler)
       when :post
         Server.post(path, &config[:block])
       end
@@ -360,7 +426,10 @@ module Drzyr
   def rerun_page(path, ws, session_id)
     page_block = state.pages.dig(path, :block)
     return {} unless page_block
-    elements, sidebar_elements, navbar_config = nil, nil, nil
+
+    elements = nil
+    sidebar_elements = nil
+    navbar_config = nil
     state.synchronized do
       page_state = state.state[session_id][path]
       pending_presses_for_ws = state.pending_button_presses.fetch(ws, {})
@@ -368,8 +437,9 @@ module Drzyr
       builder = UIBuilder.new(page_state, pending_presses_for_ws)
       builder.instance_exec(&page_block)
 
-      elements, sidebar_elements, navbar_config = builder.ui_elements, builder.sidebar_elements, builder.navbar_config
-      state.pending_button_presses.delete(ws)
+      elements = builder.ui_elements
+      sidebar_elements = builder.sidebar_elements
+      navbar_config = builder.navbar_config
     end
     { elements: elements, sidebar_elements: sidebar_elements, navbar: navbar_config }
   end
@@ -425,10 +495,13 @@ module Drzyr
     end
 
     private
+
     def handle_message(data, path, ws, session_id)
       app_state = Drzyr.state
       app_state.synchronized do
         case data['type']
+        when 'client_ready'
+          # No state change needed, just trigger a re-render for the new client
         when 'update'
           app_state.state[session_id][path][data['widget_id']] = data['value']
         when 'button_press'
@@ -436,8 +509,9 @@ module Drzyr
           app_state.pending_button_presses[ws][data['widget_id']] = true
         end
       end
+      # Rerun the page logic and send the full UI state back to the client
       result = Drzyr.rerun_page(path, ws, session_id)
-      ws.send({ type: 'render', **result }.to_json) if ws
+      ws&.send({ type: 'render', **result }.to_json)
     end
   end
 end
