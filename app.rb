@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # app.rb
 require_relative 'lib/drzyr'
 
@@ -11,7 +13,7 @@ Drzyr.run do
     full_name = ''
     password = ''
 
-    h1 "RubyFlow Conf 2025 Registration"
+    h1 'RubyFlow Conf 2025 Registration'
     # ... (intro text) ...
     divider
 
@@ -31,9 +33,7 @@ Drzyr.run do
       @errors['password'] = 'Password must be at least 8 characters long.' if current_password.length < 8
 
       # If there are no errors, update the application's state.
-      if @errors.empty?
-        @submitted_successfully = true
-      end
+      @submitted_successfully = true if @errors.empty?
     end
 
     # Handle the form reset action
@@ -44,8 +44,8 @@ Drzyr.run do
 
     # --- Step 2: Render the UI Based on the Current State ---
     if @submitted_successfully
-      alert("Thank you for registering!", style: :success)
-      p "You can now reset the form to submit again."
+      alert('Thank you for registering!', style: :success)
+      p 'You can now reset the form to submit again.'
       # Render the reset button again in the success view
       button(id: 'reset_form', text: 'Reset Form')
     else
@@ -54,7 +54,8 @@ Drzyr.run do
       # They will correctly receive the @errors hash.
       form_group(label: 'Attendee Details') do
         full_name = text_input(id: 'full_name', label: 'Full Name:', error: @errors['full_name'])
-        password = password_input(id: 'password', label: 'Create a password for your ticket:', error: @errors['password'])
+        password = password_input(id: 'password', label: 'Create a password for your ticket:',
+                                  error: @errors['password'])
         date_input(id: 'dob', label: 'Date of Birth:')
       end
 
@@ -65,7 +66,7 @@ Drzyr.run do
     end
 
     divider
-    h2 "Other Components..."
+    h2 'Other Components...'
     # ... (rest of the app.rb file) ...
   end
   # ... (the /c page remains the same) ...

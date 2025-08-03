@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # lib/drzyr.rb
 require 'sinatra/base'
 require 'faye/websocket'
@@ -5,16 +7,15 @@ require 'json'
 require 'erb'
 require 'securerandom'
 require 'date'
-require 'thread' # For Mutex
 
 # A lightweight framework for creating interactive web UIs with Ruby.
 module Drzyr
   # --- Constants for WebSocket communication ---
-  MSG_TYPE_RENDER = 'render'.freeze
-  MSG_TYPE_CLIENT_READY = 'client_ready'.freeze
-  MSG_TYPE_NAVIGATE = 'navigate'.freeze
-  MSG_TYPE_UPDATE = 'update'.freeze
-  MSG_TYPE_BUTTON_PRESS = 'button_press'.freeze
+  MSG_TYPE_RENDER = 'render'
+  MSG_TYPE_CLIENT_READY = 'client_ready'
+  MSG_TYPE_NAVIGATE = 'navigate'
+  MSG_TYPE_UPDATE = 'update'
+  MSG_TYPE_BUTTON_PRESS = 'button_press'
 
   # Manages the application's state.
   class StateManager
@@ -63,18 +64,20 @@ module Drzyr
       @tab_labels = []
     end
 
-    def tab(label)
+    def tab(label, &block)
       @tab_labels << label
-      @tabs_content[label] = @ui_builder.capture_elements { yield }
+      @tabs_content[label] = @ui_builder.capture_elements(&block)
     end
   end
 
   class ColumnBuilder
     attr_reader :columns
+
     def initialize(ui_builder)
       @ui_builder = ui_builder
       @columns = []
     end
+
     def column(&block)
       @columns << @ui_builder.capture_elements(&block)
     end
@@ -91,16 +94,39 @@ module Drzyr
     end
 
     (1..6).each { |l| define_method("h#{l}") { |text| add_element("heading#{l}", text: text) } }
-    def p(text); add_element('paragraph', text: text); end
-    def table(data, headers: []); add_element('table', data: data, headers: headers); end
-    def alert(text, style: :primary); add_element('alert', text: text, style: style); end
-    def image(src, caption: nil); add_element('image', src: src, caption: caption); end
-    def code(text, language: nil); add_element('code', text: text, language: language); end
-    def latex(text); add_element('latex', text: text); end
-    def spinner(label: nil); add_element('spinner', label: label); end
-    def divider; add_element('divider', {}); end
+    def p(text)
+      add_element('paragraph', text: text)
+    end
 
-    def expander(label:, expanded: false)
+    def table(data, headers: [])
+      add_element('table', data: data, headers: headers)
+    end
+
+    def alert(text, style: :primary)
+      add_element('alert', text: text, style: style)
+    end
+
+    def image(src, caption: nil)
+      add_element('image', src: src, caption: caption)
+    end
+
+    def code(text, language: nil)
+      add_element('code', text: text, language: language)
+    end
+
+    def latex(text)
+      add_element('latex', text: text)
+    end
+
+    def spinner(label: nil)
+      add_element('spinner', label: label)
+    end
+
+    def divider
+      add_element('divider', {})
+    end
+
+    def expander(label:, expanded: false, &block)
       expander_id = "expander_#{label.gsub(/\s+/, '_').downcase}"
       is_expanded = @page_state.fetch(expander_id, expanded)
 
@@ -109,12 +135,12 @@ module Drzyr
         @page_state[expander_id] = is_expanded
       end
 
-      content = is_expanded ? capture_elements { yield } : []
+      content = is_expanded ? capture_elements(&block) : []
       add_element('expander', id: expander_id, label: label, expanded: is_expanded, content: content)
     end
 
-    def form_group(label:)
-      content = capture_elements { yield }
+    def form_group(label:, &block)
+      content = capture_elements(&block)
       add_element('form_group', label: label, content: content)
     end
 
@@ -150,7 +176,11 @@ module Drzyr
       default_str = default || Date.today.to_s
       value_str = @page_state.fetch(id, default_str)
       add_input_element('date_input', id, label, value_str, error: error)
-      Date.parse(value_str) rescue Date.parse(default_str)
+      begin
+        Date.parse(value_str)
+      rescue StandardError
+        Date.parse(default_str)
+      end
     end
 
     def checkbox(id:, label:, error: nil)
@@ -199,29 +229,37 @@ module Drzyr
       end
 
       add_element('tabs',
-        id: tabs_id,
-        labels: tab_builder.tab_labels,
-        active_tab: active_tab,
-        content: tab_builder.tabs_content[active_tab]
-      )
+                  id: tabs_id,
+                  labels: tab_builder.tab_labels,
+                  active_tab: active_tab,
+                  content: tab_builder.tabs_content[active_tab])
     end
 
-    def columns(&block)
+    def columns
       builder = ColumnBuilder.new(self)
       yield builder
       add_element('columns_container', columns: builder.columns)
     end
 
     def capture_elements(&block)
-      original_elements, @ui_elements = @ui_elements, []
+      original_elements = @ui_elements
+      @ui_elements = []
       instance_exec(&block)
-      captured, @ui_elements = @ui_elements, original_elements
+      captured = @ui_elements
+      @ui_elements = original_elements
       captured
     end
 
     private
-    def add_element(type, attributes); @ui_elements << attributes.merge(type: type); end
-    def add_input_element(type, id, label, value, error: nil, **attrs); add_element(type, {id:id, label:label, value:value, error:error, **attrs}); value; end
+
+    def add_element(type, attributes)
+      @ui_elements << attributes.merge(type: type)
+    end
+
+    def add_input_element(type, id, label, value, error: nil, **attrs)
+      add_element(type, { id: id, label: label, value: value, error: error, **attrs })
+      value
+    end
   end
 
   def rerun_page(path, ws)
@@ -273,6 +311,7 @@ module Drzyr
     end
 
     private
+
     def handle_message(data, path, ws)
       app_state = Drzyr.state
       app_state.synchronized do
@@ -286,7 +325,7 @@ module Drzyr
       end
 
       elements = Drzyr.rerun_page(path, ws)
-      ws.send({ type: MSG_TYPE_RENDER, elements: elements }.to_json) if ws
+      ws&.send({ type: MSG_TYPE_RENDER, elements: elements }.to_json)
     end
   end
 end
