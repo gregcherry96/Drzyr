@@ -5,69 +5,53 @@ require_relative 'lib/drzyr'
 
 Drzyr.run do
   Drzyr.page '/' do
-    # --- State for validation and submission ---
+    # --- Application State ---
     @errors ||= {}
     @submitted_successfully ||= false
+    @show_source ||= false
 
-    # Define variables in the outer scope to be accessible everywhere
-    full_name = ''
-    password = ''
+    # navbar 'Drzyr Showcase', links: { 'Home' => '/', 'Dashboard' => '/c' }
 
-    h1 'RubyFlow Conf 2025 Registration'
-    # ... (intro text) ...
-    divider
+    sidebar do
+      h3 'Drzyr Controls'
+      p 'A Ruby web framework.'
 
-    # ** THE FIX IS HERE **
-    # --- Step 1: Handle Actions and State Changes First ---
-    # Check for the submission button press at the very beginning.
-    if button(id: 'submit_reg', text: 'Complete Registration')
-      # Re-fetch the current values from the state to validate them.
-      current_name = @page_state.fetch('full_name', '')
-      current_password = @page_state.fetch('password', '')
+      divider
 
-      # Clear previous errors
-      @errors = {}
+      # --- Add the Theme Toggle to the sidebar ---
+      theme_toggle(id: 'theme_switch')
 
-      # Perform validation
-      @errors['full_name'] = 'Full Name cannot be empty.' if current_name.empty?
-      @errors['password'] = 'Password must be at least 8 characters long.' if current_password.length < 8
+      divider
 
-      # If there are no errors, update the application's state.
-      @submitted_successfully = true if @errors.empty?
+      @show_source = !@show_source if checkbox(id: 'show_source', label: 'Show Source Code')
     end
 
-    # Handle the form reset action
-    if button(id: 'reset_form', text: 'Reset Form')
-      @submitted_successfully = false
-      @errors = {}
-    end
+    # --- Main Page Content ---
+    h1 'Drzyr Framework Showcase'
 
-    # --- Step 2: Render the UI Based on the Current State ---
-    if @submitted_successfully
-      alert('Thank you for registering!', style: :success)
-      p 'You can now reset the form to submit again.'
-      # Render the reset button again in the success view
-      button(id: 'reset_form', text: 'Reset Form')
-    else
-      # --- Form Inputs ---
-      # These are now rendered *after* the validation logic has run.
-      # They will correctly receive the @errors hash.
-      form_group(label: 'Attendee Details') do
-        full_name = text_input(id: 'full_name', label: 'Full Name:', error: @errors['full_name'])
-        password = password_input(id: 'password', label: 'Create a password for your ticket:',
-                                  error: @errors['password'])
-        date_input(id: 'dob', label: 'Date of Birth:')
+    # Show source code if the sidebar checkbox is ticked
+    if @show_source
+      expander(label: 'Application Source (app.rb)', expanded: true) do
+        code(File.read(__FILE__), language: 'ruby')
       end
-
-      # ... (other form groups) ...
-
-      # Render the submission button again in the form view
-      button(id: 'submit_reg', text: 'Complete Registration')
     end
 
     divider
-    h2 'Other Components...'
-    # ... (rest of the app.rb file) ...
+
+    movie_data = [
+      ['The Shawshank Redemption', 'Crime, Drama', '1994'],
+      ['The Godfather', 'Crime, Drama', '1972'],
+      ['The Dark Knight', 'Action, Crime, Drama', '2008'],
+      ['Pulp Fiction', 'Crime, Drama', '1994'],
+      ['Forrest Gump', 'Drama, Romance', '1994'],
+      ['The Lord of the Rings: The Return of the King', 'Action, Adventure, Drama', '2003'],
+      ['Schindler\'s List', 'Biography, Drama, History', '1993']
+    ]
+
+    data_table(
+      id: 'movie_table',
+      columns: ['Name', 'Genre', 'Release Year'],
+      data: movie_data
+    )
   end
-  # ... (the /c page remains the same) ...
 end

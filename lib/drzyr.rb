@@ -85,12 +85,27 @@ module Drzyr
 
   # Dynamically builds the UI by executing a page block in its context.
   class UIBuilder
-    attr_reader :ui_elements
+    attr_reader :ui_elements, :sidebar_elements, :navbar_config
 
     def initialize(page_state, pending_presses)
       @page_state = page_state
       @pending_presses = pending_presses
       @ui_elements = []
+      @sidebar_elements = []
+      @capturing_sidebar = false
+      @navbar_config = nil
+    end
+
+    def navbar(title, links: {})
+      @navbar_config = { title: title, links: links }
+    end
+
+    def sidebar
+      original_capturing_sidebar = @capturing_sidebar
+      @capturing_sidebar = true
+      yield
+    ensure
+      @capturing_sidebar = original_capturing_sidebar
     end
 
     (1..6).each { |l| define_method("h#{l}") { |text| add_element("heading#{l}", text: text) } }
@@ -124,6 +139,18 @@ module Drzyr
 
     def divider
       add_element('divider', {})
+    end
+
+    def theme_toggle(id:, label: 'Dark Mode', default_dark: false)
+      is_dark = checkbox(id: id, label: label)
+      theme = is_dark ? 'dark' : 'light'
+      @page_state['theme'] = theme
+      add_element('theme_setter', theme: theme)
+      theme
+    end
+
+    def chart(id:, data:, options: {})
+      add_element('chart', id: id, data: data, options: options)
     end
 
     def expander(label:, expanded: false, &block)
@@ -199,6 +226,10 @@ module Drzyr
       value
     end
 
+    def data_table(id:, data:, columns:)
+      add_element('data_table', id: id, data: data, columns: columns)
+    end
+
     def multi_select(id:, label:, options:, default: [], error: nil)
       value = @page_state.fetch(id, default)
       current_selection = value.is_a?(Array) ? value : value.to_s.split(',')
@@ -242,18 +273,23 @@ module Drzyr
     end
 
     def capture_elements(&block)
+      target_array = @capturing_sidebar ? @sidebar_elements : @ui_elements
+
       original_elements = @ui_elements
       @ui_elements = []
       instance_exec(&block)
       captured = @ui_elements
       @ui_elements = original_elements
+
+      target_array.concat(captured)
       captured
     end
 
     private
 
     def add_element(type, attributes)
-      @ui_elements << attributes.merge(type: type)
+      target_array = @capturing_sidebar ? @sidebar_elements : @ui_elements
+      target_array << attributes.merge(type: type)
     end
 
     def add_input_element(type, id, label, value, error: nil, **attrs)
@@ -264,20 +300,25 @@ module Drzyr
 
   def rerun_page(path, ws)
     page_block = state.pages[path]
-    return [] unless page_block
+    return {} unless page_block
 
     elements = nil
+    sidebar_elements = nil
+    navbar_config = nil
     state.synchronized do
       page_state = state.state[path]
       pending_presses_for_ws = state.pending_button_presses.fetch(ws, {})
 
       builder = UIBuilder.new(page_state, pending_presses_for_ws)
       builder.instance_exec(&page_block)
+
       elements = builder.ui_elements
+      sidebar_elements = builder.sidebar_elements
+      navbar_config = builder.navbar_config
 
       state.pending_button_presses.delete(ws)
     end
-    elements
+    { elements: elements, sidebar_elements: sidebar_elements, navbar: navbar_config }
   end
 
   # --- Sinatra Web Server ---
@@ -324,8 +365,8 @@ module Drzyr
         end
       end
 
-      elements = Drzyr.rerun_page(path, ws)
-      ws&.send({ type: MSG_TYPE_RENDER, elements: elements }.to_json)
+      result = Drzyr.rerun_page(path, ws)
+      ws&.send({ type: MSG_TYPE_RENDER, **result }.to_json)
     end
   end
 end

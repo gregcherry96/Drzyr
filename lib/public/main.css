@@ -1,0 +1,172 @@
+/* ==========================================================================
+   Drzyr Framework - Custom Stylesheet
+   ========================================================================== */
+
+/* ===== THEME & COLOR PALETTE ===== */
+/* Defines the color scheme for both light and dark modes.
+   -------------------------------------------------------------------------- */
+:root {
+  --bg-color: #ffffff;
+  --bg-color-secondary: #f8f9fa;
+  --border-color: #dee2e6;
+  --text-color: #455060;
+  --text-color-light: #8492a6;
+  --primary-color: #5755d9;
+  --primary-color-light: rgba(87, 85, 217, 0.1);
+}
+
+.dark-mode {
+  --bg-color: #202b38;
+  --bg-color-secondary: #2c3a4a;
+  --border-color: #4d5d70;
+  --text-color: #e0e6eb;
+  --text-color-light: #9fb1c5;
+  --primary-color: #667eea;
+  --primary-color-light: rgba(102, 126, 234, 0.1);
+}
+
+
+/* ===== CORE LAYOUT ===== */
+/* Defines the main structure: navbar, sidebar, and content area.
+   -------------------------------------------------------------------------- */
+body {
+  background-color: var(--bg-color-secondary);
+  color: var(--text-color);
+}
+
+#layout-container.with-sidebar {
+  display: flex;
+  height: calc(100vh - 53px); /* Full height minus navbar */
+}
+
+#sidebar {
+  display: none; /* Hidden by default */
+  background-color: var(--bg-color);
+  border-right: 1px solid var(--border-color);
+}
+
+#layout-container.with-sidebar #sidebar {
+  display: block;
+  width: 300px;
+  padding: 1rem;
+  overflow-y: auto;
+  flex-shrink: 0; /* Prevents the sidebar from shrinking */
+}
+
+#app {
+  background-color: var(--bg-color);
+  padding: 1rem;
+  min-width: 0; /* Prevents flexbox overflow issues with wide content like tables */
+}
+
+#layout-container.with-sidebar #app {
+  flex-grow: 1;
+  overflow-y: auto;
+}
+
+
+/* ===== COMPONENT STYLING ===== */
+/* Custom styles for individual Drzyr and third-party components.
+   -------------------------------------------------------------------------- */
+
+/* --- Navbar --- */
+#navbar-container.navbar-visible {
+  background: var(--bg-color);
+  padding: 0.2rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+}
+
+#navbar-container.navbar-visible .btn.btn-link {
+  color: var(--text-color-light);
+  text-decoration: none;
+}
+
+#navbar-container.navbar-visible .btn.btn-link:hover {
+  color: var(--text-color);
+  background: var(--bg-color-secondary);
+}
+
+#navbar-container.navbar-visible .navbar-link-active {
+  background: var(--primary-color-light);
+  color: var(--primary-color) !important;
+  font-weight: 600;
+}
+
+/* --- Charts --- */
+.chart-container {
+  position: relative;
+  max-width: 800px;
+  margin: auto;
+  padding: 1rem 0;
+}
+
+/* --- Dark Mode Component Overrides --- */
+.dark-mode .form-input,
+.dark-mode .form-select,
+.dark-mode textarea {
+  background: var(--bg-color-secondary);
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+.dark-mode .accordion,
+.dark-mode .toast,
+.dark-mode .form-group fieldset { /* Make form groups visually consistent */
+  border-color: var(--border-color) !important;
+}
+
+.dark-mode .table {
+  background: var(--bg-color);
+  color: var(--text-color);
+}
+
+.dark-mode .table th,
+.dark-mode .table td {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.dark-mode .tab .tab-item a {
+  color: var(--text-color-light);
+}
+
+.dark-mode .tab .tab-item.active a,
+.dark-mode .tab .tab-item a:hover {
+  color: var(--text-color);
+  border-bottom-color: var(--primary-color);
+}
+
+.dark-mode .divider {
+  background-color: var(--border-color);
+}
+
+/* Grid.js Dark Theme */
+.dark-mode .gridjs-head,
+.dark-mode .gridjs-footer {
+    background-color: var(--bg-color-secondary);
+}
+.dark-mode .gridjs-table,
+.dark-mode .gridjs-container,
+.dark-mode .gridjs-th,
+.dark-mode .gridjs-td {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    border-color: var(--border-color);
+}
+.dark-mode .gridjs-th .gridjs-sort-neutral,
+.dark-mode .gridjs-th .gridjs-sort-asc,
+.dark-mode .gridjs-th .gridjs-sort-desc {
+    filter: invert(1);
+}
+.dark-mode .gridjs-input {
+    background-color: var(--bg-color-secondary);
+    color: var(--text-color);
+    border-color: var(--border-color);
+}
+.dark-mode .gridjs-pagination .gridjs-button {
+    background-color: var(--bg-color-secondary);
+    border-color: var(--border-color);
+}
+.dark-mode .gridjs-pagination .gridjs-button:hover {
+    background-color: var(--border-color);
+}
