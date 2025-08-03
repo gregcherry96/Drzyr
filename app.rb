@@ -8,6 +8,7 @@ def slugify(title)
 end
 
 # --- Define the structure of the documentation page ---
+# This makes the page easy to manage and extend.
 SECTIONS = {
   "Text & Display" => {
     description: "For displaying basic text content and media.",
@@ -84,6 +85,18 @@ SECTIONS = {
           date = date_input(id: 'showcase_date', label: 'Date:')
           p "Date: #{date.strftime('%Y-%m-%d')}"
         }},
+      { title: "Date Range Picker", code: "start, finish = date_range_picker(...)",
+        block: -> {
+          start_date, end_date = date_range_picker(
+            id: 'showcase_date_range',
+            label: 'Select Date Range:'
+          )
+          if start_date && end_date
+            p "Start: #{start_date.strftime('%Y-%m-%d')}, End: #{end_date.strftime('%Y-%m-%d')}"
+          else
+            p "Please select a valid date range."
+          end
+        }},
       { title: "Text Area", code: "text = textarea(...)\np \"Text: \#{text}\"",
         block: -> {
             text = textarea(id: 'showcase_textarea', label: 'Feedback:', rows: 3)
@@ -144,86 +157,12 @@ SECTIONS = {
   }
 }
 
-# --- A fully interactive to-do list application ---
-react '/todo' do
-  # --- Initialize the list of to-dos in the page's state ---
-  # This will only run once when the page is first loaded.
-  @page_state['todos'] ||= [
-    { id: SecureRandom.hex(4), text: 'Create a Drzyr to-do app' },
-    { id: SecureRandom.hex(4), text: 'Showcase its features' },
-    { id: SecureRandom.hex(4), text: 'Make it awesome' }
-  ]
-
-  # --- Universal Layout ---
-  navbar do
-    brand "My To-Do List"
-  end
-
-  # --- Main Content ---
-  h1 "Drzyr To-Do App"
-  p "A simple application to manage your daily tasks."
-
-  # --- Form for adding new to-dos ---
-  form_group(label: 'Add a new item') do
-    new_todo_text = text_input(id: 'new_todo_text', label: 'Task description:')
-
-    if button(id: 'add_todo', text: 'Add Task') && !new_todo_text.empty?
-      # Add the new to-do to the list
-      @page_state['todos'] << { id: SecureRandom.hex(4), text: new_todo_text }
-      # Clear the input field by updating its state
-      @page_state['new_todo_text'] = ''
-    end
-  end
-
-  divider
-
-  # --- Display the list of to-dos ---
-  h3 "Your Tasks"
-
-  if @page_state['todos'].empty?
-    alert("You've completed all your tasks! 🎉", style: :success)
-  else
-    # Iterate through the to-dos and create a button to remove each one
-    @page_state['todos'].each do |todo|
-      columns do |c|
-        # Column for the to-do text
-        c.column { p todo[:text] }
-
-        # Column for the "Done" button
-        c.column do
-          if button(id: "done_#{todo[:id]}", text: 'Done')
-            # Remove the to-do from the list by its ID
-            @page_state['todos'].delete_if { |item| item[:id] == todo[:id] }
-          end
-        end
-      end
-    end
-  end
-end
-
-react '/nav' do
-  navbar do
-    brand "Drzyr Showcase"
-    link "Home", href: "/"
-
-    if @page_state.fetch('show_extra_link', false)
-      link "Extra Link", href: "#"
-    end
-  end
-
-  sidebar do
-    checkbox(id: 'show_extra_link', label: 'Show extra navbar link')
-  end
-end
-
+# --- Main Application ---
 react '/' do
-  navbar do
+  # --- Universal Layout ---
+  navbar do |nav|
     brand "Drzyr Showcase"
-    link "Home", href: "/"
-
-    if @page_state['show_extra_link']
-      link "Extra Link", href: "#"
-    end
+    link "Showcase", href: "/"
   end
 
   sidebar do
@@ -231,8 +170,6 @@ react '/' do
     p "An interactive web UI framework for Ruby."
     divider
     theme_toggle(id: 'theme_switch')
-    divider
-    checkbox(id: 'show_extra_link', label: 'Show extra navbar link')
     divider
 
     h4 "On This Page"

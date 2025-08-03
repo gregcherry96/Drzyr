@@ -204,6 +204,17 @@ module Drzyr
       Date.parse(value_str) rescue Date.parse(default_str)
     end
 
+    def date_range_picker(id:, label:, default: nil, error: nil)
+      default_range = default || [Date.today, Date.today + 7]
+      default_str = "#{default_range[0]} - #{default_range[1]}"
+
+      value_str = @page_state.fetch(id, default_str)
+
+      add_input_element('date_range_picker', id, label, value_str, error: error)
+
+      value_str.split(' - ').map { |d| Date.parse(d) rescue nil }.compact
+    end
+
     def checkbox(id:, label:, error: nil)
       value = @page_state.fetch(id, false)
       add_input_element('checkbox', id, label, value, error: error)
@@ -311,6 +322,14 @@ module Drzyr
   def register_page(path, type, &block); state.pages[path] = { type: type, block: block }; end
 
   def run!
+    puts "\e[35m"
+    puts " ____                _"
+    puts "|  _ \\ _ __ __ _  __| |_ __"
+    puts "| | | | '__/ _` |/ _` | '__|"
+    puts "| |_| | | | (_| | (_| | |"
+    puts "|____/|_|  \\__,_|\\__,_|_|"
+    puts "\e[0m"
+    puts
     Logger.info "Starting Drzyr server..."
 
     state.pages.each do |path, config|
