@@ -3,8 +3,6 @@
    ========================================================================== */
 
 /* ===== THEME & COLOR PALETTE ===== */
-/* Defines the color scheme for both light and dark modes.
-   -------------------------------------------------------------------------- */
 :root {
   --bg-color: #ffffff;
   --bg-color-secondary: #f8f9fa;
@@ -25,10 +23,7 @@
   --primary-color-light: rgba(102, 126, 234, 0.1);
 }
 
-
 /* ===== CORE LAYOUT ===== */
-/* Defines the main structure: navbar, sidebar, and content area.
-   -------------------------------------------------------------------------- */
 body {
   background-color: var(--bg-color-secondary);
   color: var(--text-color);
@@ -36,11 +31,11 @@ body {
 
 #layout-container.with-sidebar {
   display: flex;
-  height: calc(100vh - 53px); /* Full height minus navbar */
+  height: calc(100vh - 53px);
 }
 
 #sidebar {
-  display: none; /* Hidden by default */
+  display: none;
   background-color: var(--bg-color);
   border-right: 1px solid var(--border-color);
 }
@@ -50,13 +45,13 @@ body {
   width: 300px;
   padding: 1rem;
   overflow-y: auto;
-  flex-shrink: 0; /* Prevents the sidebar from shrinking */
+  flex-shrink: 0;
 }
 
 #app {
   background-color: var(--bg-color);
   padding: 1rem;
-  min-width: 0; /* Prevents flexbox overflow issues with wide content like tables */
+  min-width: 0;
 }
 
 #layout-container.with-sidebar #app {
@@ -64,10 +59,7 @@ body {
   overflow-y: auto;
 }
 
-
 /* ===== COMPONENT STYLING ===== */
-/* Custom styles for individual Drzyr and third-party components.
-   -------------------------------------------------------------------------- */
 
 /* --- Navbar --- */
 #navbar-container.navbar-visible {
@@ -80,6 +72,7 @@ body {
 #navbar-container.navbar-visible .btn.btn-link {
   color: var(--text-color-light);
   text-decoration: none;
+  transition: all 0.2s ease;
 }
 
 #navbar-container.navbar-visible .btn.btn-link:hover {
@@ -102,7 +95,6 @@ body {
 }
 
 /* --- Data Table Placeholder --- */
-/* Reserves space for the table while it loads to prevent page jump */
 .data-table-placeholder {
   min-height: 300px;
   display: flex;
@@ -121,7 +113,7 @@ body {
 
 .dark-mode .accordion,
 .dark-mode .toast,
-.dark-mode .form-group fieldset { /* Make form groups visually consistent */
+.dark-mode .form-group fieldset {
   border-color: var(--border-color) !important;
 }
 
