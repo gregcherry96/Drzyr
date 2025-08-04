@@ -24,7 +24,6 @@ end
 
 # --- Main Application ---
 react '/showcase' do
-  # --- Universal Layout ---
   navbar do
     brand "Drzyr Showcase"
     link "Showcase", href: "/showcase"
