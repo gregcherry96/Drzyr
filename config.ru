@@ -1,7 +1,9 @@
+# config.ru
+
 # frozen_string_literal: true
 
-# config.ru
-require 'roda'
+# Now require your application code
 require_relative './app'
 
+# Falcon will automatically use this file.
 run Drzyr::Server.freeze.app

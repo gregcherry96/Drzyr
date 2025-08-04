@@ -1,6 +1,12 @@
+# lib/drzyr/server.rb
+
 # frozen_string_literal: true
 
-# lib/drzyr/server.rb
+require 'json'
+require 'securerandom'
+require 'roda'
+require 'async/websocket'
+
 module Drzyr
   module_function
 
@@ -24,9 +30,8 @@ module Drzyr
     Logger.info "Rerunning page: '#{path}'. Page block found: #{!page_block.nil?}"
     return {} unless page_block
 
-    elements = nil
-    sidebar_elements = nil
-    navbar_config = nil
+    elements, sidebar_elements, navbar_config = nil
+
     state.synchronized do
       page_state = state.state[session_id][path]
       pending_presses_for_ws = state.pending_button_presses.fetch(ws, {})
@@ -38,60 +43,59 @@ module Drzyr
       sidebar_elements = builder.sidebar_elements
       navbar_config = builder.navbar_config
     end
+
     { elements: elements, sidebar_elements: sidebar_elements, navbar: navbar_config }
   end
 
-  # The Server is now a Roda application
+  # The Server is now a Roda application using the async-websockets plugin
   class Server < Roda
     plugin :public, root: File.expand_path('../public', __dir__)
     plugin :render, views: File.expand_path('../public', __dir__)
+    plugin :websockets
 
     route do |r|
       r.public # Serve static files
 
       # WebSocket connection handling
       r.on 'websocket' do
-        r.get do
-          halt(400) unless Faye::WebSocket.websocket?(r.env)
-          ws = Faye::WebSocket.new(r.env)
+        r.websocket do |ws|
+          session_id = nil
+          path = nil
 
-          ws.on(:open) do
-            Drzyr.state.synchronized do
-              session_id = SecureRandom.hex(16)
-              Drzyr.state.connections[ws] = { session_id: session_id, path: nil }
-              Drzyr::Logger.info "New connection opened with session ID: #{session_id}"
-            end
+          Drzyr.state.synchronized do
+            session_id = SecureRandom.hex(16)
+            Drzyr.state.connections[ws] = { session_id: session_id, path: nil }
+            Drzyr::Logger.info "New connection opened with session ID: #{session_id}"
           end
 
-          ws.on(:message) do |event|
-            data = JSON.parse(event.data)
-            path = data['path']
+          while (event_data = ws.read)
+            data = JSON.parse(event_data)
+            path ||= data['path']
 
             conn_info = Drzyr.state.connections[ws]
-            unless conn_info
-              ws.close
-              next
-            end
+            break unless conn_info
 
-            session_id = conn_info[:session_id]
             Drzyr.state.synchronized { conn_info[:path] ||= path }
-
             handle_message(data, path, ws, session_id) if path
           end
-
-          ws.on(:close) do
-            Drzyr.state.synchronized do
-              conn_info = Drzyr.state.connections.delete(ws)
-              if conn_info
-                session_id = conn_info[:session_id]
-                Drzyr.state.state.delete(session_id)
-                Drzyr::Logger.info "Session closed and state cleared for: #{session_id}"
-              end
-              Drzyr.state.pending_button_presses.delete(ws)
+        rescue Protocol::WebSocket::ClosedError
+          # This is a normal closure, log it cleanly
+          Drzyr::Logger.info "WebSocket connection closed cleanly."
+        rescue IOError, Errno::EPIPE => e
+          # This handles other potential I/O errors
+          Drzyr::Logger.info "WebSocket Error: #{e.class} - #{e.message}"
+        ensure
+          # Cleanup on close
+          Drzyr.state.synchronized do
+            conn_info = Drzyr.state.connections.delete(ws)
+            if conn_info
+              session_id = conn_info[:session_id]
+              Drzyr.state.state.delete(session_id)
+              Drzyr::Logger.info "Session closed and state cleared for: #{session_id}"
             end
-            ws = nil
+            Drzyr.state.pending_button_presses.delete(ws)
           end
-          r.halt(ws.rack_response)
+          ws = nil
         end
       end
 
@@ -99,7 +103,6 @@ module Drzyr
       page_config = Drzyr.state.pages[r.path]
 
       if page_config
-        # If a page is found for the exact path, render it
         builder = UIBuilder.new({}, {}) # Initial render is stateless
         builder.instance_exec(&page_config[:block])
         server_rendered_data = {
@@ -128,7 +131,8 @@ module Drzyr
         end
       end
       result = Drzyr.rerun_page(path, ws, session_id)
-      ws&.send({ type: 'render', **result }.to_json)
+      ws&.write({ type: 'render', **result }.to_json)
+      ws&.flush
     end
   end
 end

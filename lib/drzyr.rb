@@ -3,7 +3,6 @@
 
 # External gems
 require 'roda'
-require 'faye/websocket'
 require 'json'
 require 'erb'
 require 'securerandom'

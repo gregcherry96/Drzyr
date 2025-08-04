@@ -20,6 +20,30 @@ def show_case(title, description, code_string, &block)
   end
 end
 
+# --- Helper for rolling average ---
+def rolling_average(data, window_size)
+  return data if window_size <= 1
+
+  averaged_data = []
+  data.each_with_index do |row, i|
+    next if i < window_size - 1
+
+    window = data[(i - window_size + 1)..i]
+    # Transpose the window to get columns, then average each column
+    new_row = window.transpose.map { |col| col.sum / window_size.to_f }
+    averaged_data << new_row
+  end
+  averaged_data
+end
+
+# --- Helper to generate normally distributed random numbers (approximates numpy.random.randn) ---
+def randn
+  theta = 2 * Math::PI * rand
+  rho = Math.sqrt(-2 * Math.log(1 - rand))
+  rho * Math.cos(theta)
+end
+
+
 react '/' do
 end
 
@@ -28,6 +52,7 @@ react '/showcase' do
   navbar do
     brand 'Drzyr Showcase'
     link 'Showcase', href: '/showcase'
+    link 'Streamlit Example', href: '/streamlit-example'
   end
 
   sidebar do
@@ -195,5 +220,87 @@ react '/showcase' do
       },
       options: { type: chart_type }
     )
+  end
+end
+
+react '/streamlit-example' do
+  navbar do
+    brand 'Drzyr Showcase'
+    link 'Showcase', href: '/showcase'
+    link 'Streamlit Example', href: '/streamlit-example'
+  end
+
+  h1 'Streamlit Example 📊'
+  p 'This page demonstrates a simple interactive chart and data table, similar to what you can create with Streamlit.'
+
+  all_users = ["Alice", "Bob", "Charly"]
+
+  form_group(label: 'Controls') do
+    @selected_users = multi_select(id: 'users_multiselect', label: 'Users', options: all_users, default: all_users)
+    @rolling_average = checkbox(id: 'rolling_average_toggle', label: 'Enable 7-day Rolling Average')
+  end
+
+  # Generate data based on selected users
+  user_indices = @selected_users.map { |u| all_users.index(u) }.compact
+
+  data_key = "data_#{@selected_users.join('_')}"
+
+  all_data = cache(data_key) do
+    srand(42) # for reproducibility
+    Array.new(20) { Array.new(all_users.length) { randn } }
+  end
+
+  # Select columns for the chosen users
+  data = all_data.map do |row|
+    user_indices.map { |i| row[i] }
+  end
+
+  if @rolling_average
+    data = rolling_average(data, 7)
+  end
+
+  tabs do |t|
+    t.tab('Chart') do
+        if data.empty?
+            alert("Not enough data for rolling average.", style: :warning)
+        else
+            chart(
+                id: 'line_chart_example',
+                data: {
+                  labels: (1..data.length).to_a,
+                  datasets: @selected_users.map.with_index do |user, i|
+                    {
+                      label: user,
+                      data: data.map { |row| row[i] },
+                      fill: false,
+                      borderColor: "##{Digest::MD5.hexdigest(user)[0, 6]}", # Generate a color from the user name
+                      tension: 0.1
+                    }
+                  end
+                },
+                options: {
+                  type: 'line',
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  scales: {
+                      y: {
+                          beginAtZero: true
+                      }
+                  }
+                }
+              )
+        end
+    end
+    t.tab('Dataframe') do
+        if data.empty?
+            alert("Not enough data for rolling average.", style: :warning)
+        else
+            data_table(
+                id: 'dataframe_example',
+                columns: @selected_users,
+                data: data.map { |row| row.map { |val| val.round(4) } } # Round for display
+              )
+        end
+    end
   end
 end

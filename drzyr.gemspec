@@ -16,10 +16,12 @@ Gem::Specification.new do |spec|
   spec.executables   = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ['lib']
 
-  spec.add_dependency 'faye-websocket', '~> 0.12.0'
-  spec.add_dependency 'puma', '~> 6.6'
+  spec.add_dependency "falcon", "~> 0.52.0"
   spec.add_dependency 'rack', '~> 3.1'
   spec.add_dependency 'roda', '~> 3.45'
+  spec.add_dependency "roda-websockets", "~> 0.1.0"
+  spec.add_dependency "async-websocket", "~> 0.30.0"
+  spec.add_dependency 'tilt', '~> 2.6'
 
   spec.add_development_dependency 'rubocop', '~> 1.79'
 end
