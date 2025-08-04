@@ -1,3 +1,12 @@
+PATH
+  remote: .
+  specs:
+    drzyr (0.1.0)
+      faye-websocket (~> 0.12.0)
+      puma (~> 6.6)
+      rack (~> 3.1)
+      roda (~> 3.45)
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -10,30 +19,22 @@ GEM
     json (2.13.2)
     language_server-protocol (3.17.0.5)
     lint_roller (1.1.0)
-    logger (1.7.0)
-    mustermann (3.0.3)
-      ruby2_keywords (~> 0.0.1)
     nio4r (2.7.4)
     parallel (1.27.0)
     parser (3.3.9.0)
       ast (~> 2.4.1)
       racc
     prism (1.4.0)
-    puma (6.6.0)
+    puma (6.6.1)
       nio4r (~> 2.0)
     racc (1.8.1)
     rack (3.1.16)
-    rack-protection (4.1.1)
-      base64 (>= 0.1.0)
-      logger (>= 1.6.0)
-      rack (>= 3.0.0, < 4)
-    rack-session (2.1.1)
-      base64 (>= 0.1.0)
-      rack (>= 3.0.0)
     rackup (2.2.1)
       rack (>= 3)
     rainbow (3.1.1)
     regexp_parser (2.10.0)
+    roda (3.94.0)
+      rack
     rubocop (1.79.1)
       json (~> 2.3)
       language_server-protocol (~> 3.17.0.2)
@@ -49,15 +50,7 @@ GEM
       parser (>= 3.3.7.2)
       prism (~> 1.4)
     ruby-progressbar (1.13.0)
-    ruby2_keywords (0.0.5)
-    sinatra (4.1.1)
-      logger (>= 1.6.0)
-      mustermann (~> 3.0)
-      rack (>= 3.0.0, < 4)
-      rack-protection (= 4.1.1)
-      rack-session (>= 2.0.0, < 3)
-      tilt (~> 2.0)
-    tilt (2.6.0)
+    tilt (2.6.1)
     unicode-display_width (3.1.4)
       unicode-emoji (~> 4.0, >= 4.0.4)
     unicode-emoji (4.0.4)
@@ -71,12 +64,11 @@ PLATFORMS
   x86_64-linux
 
 DEPENDENCIES
-  faye-websocket (~> 0.12.0)
-  puma (~> 6.6)
-  rack (~> 3.1)
+  drzyr!
   rackup (~> 2.2)
+  roda (~> 3.45)
   rubocop (~> 1.79)
-  sinatra (~> 4.1)
+  tilt (~> 2.6)
 
 BUNDLED WITH
    2.6.2

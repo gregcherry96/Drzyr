@@ -1,6 +1,8 @@
+# frozen_string_literal: true
+
 Gem::Specification.new do |spec|
   spec.name          = 'drzyr'
-  spec.version       = "0.1.0"
+  spec.version       = '0.1.0'
   spec.authors       = ['Greg Cherry']
   spec.email         = ['greg.cherry96@gmail.com']
 
@@ -17,7 +19,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'faye-websocket', '~> 0.12.0'
   spec.add_dependency 'puma', '~> 6.6'
   spec.add_dependency 'rack', '~> 3.1'
-  spec.add_dependency 'sinatra', '~> 4.1'
+  spec.add_dependency 'roda', '~> 3.45'
 
   spec.add_development_dependency 'rubocop', '~> 1.79'
 end
