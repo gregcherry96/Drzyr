@@ -80,7 +80,7 @@ module Drzyr
           end
         rescue Protocol::WebSocket::ClosedError
           # This is a normal closure, log it cleanly
-          Drzyr::Logger.info "WebSocket connection closed cleanly."
+          Drzyr::Logger.info 'WebSocket connection closed cleanly.'
         rescue IOError, Errno::EPIPE => e
           # This handles other potential I/O errors
           Drzyr::Logger.info "WebSocket Error: #{e.class} - #{e.message}"

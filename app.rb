@@ -25,7 +25,7 @@ def rolling_average(data, window_size)
   return data if window_size <= 1
 
   averaged_data = []
-  data.each_with_index do |row, i|
+  data.each_with_index do |_row, i|
     next if i < window_size - 1
 
     window = data[(i - window_size + 1)..i]
@@ -42,7 +42,6 @@ def randn
   rho = Math.sqrt(-2 * Math.log(1 - rand))
   rho * Math.cos(theta)
 end
-
 
 react '/' do
 end
@@ -233,7 +232,7 @@ react '/streamlit-example' do
   h1 'Streamlit Example 📊'
   p 'This page demonstrates a simple interactive chart and data table, similar to what you can create with Streamlit.'
 
-  all_users = ["Alice", "Bob", "Charly"]
+  all_users = %w[Alice Bob Charly]
 
   form_group(label: 'Controls') do
     @selected_users = multi_select(id: 'users_multiselect', label: 'Users', options: all_users, default: all_users)
@@ -255,52 +254,50 @@ react '/streamlit-example' do
     user_indices.map { |i| row[i] }
   end
 
-  if @rolling_average
-    data = rolling_average(data, 7)
-  end
+  data = rolling_average(data, 7) if @rolling_average
 
   tabs do |t|
     t.tab('Chart') do
-        if data.empty?
-            alert("Not enough data for rolling average.", style: :warning)
-        else
-            chart(
-                id: 'line_chart_example',
-                data: {
-                  labels: (1..data.length).to_a,
-                  datasets: @selected_users.map.with_index do |user, i|
-                    {
-                      label: user,
-                      data: data.map { |row| row[i] },
-                      fill: false,
-                      borderColor: "##{Digest::MD5.hexdigest(user)[0, 6]}", # Generate a color from the user name
-                      tension: 0.1
-                    }
-                  end
-                },
-                options: {
-                  type: 'line',
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  scales: {
-                      y: {
-                          beginAtZero: true
-                      }
-                  }
-                }
-              )
-        end
+      if data.empty?
+        alert('Not enough data for rolling average.', style: :warning)
+      else
+        chart(
+          id: 'line_chart_example',
+          data: {
+            labels: (1..data.length).to_a,
+            datasets: @selected_users.map.with_index do |user, i|
+              {
+                label: user,
+                data: data.map { |row| row[i] },
+                fill: false,
+                borderColor: "##{Digest::MD5.hexdigest(user)[0, 6]}", # Generate a color from the user name
+                tension: 0.1
+              }
+            end
+          },
+          options: {
+            type: 'line',
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              y: {
+                beginAtZero: true
+              }
+            }
+          }
+        )
+      end
     end
     t.tab('Dataframe') do
-        if data.empty?
-            alert("Not enough data for rolling average.", style: :warning)
-        else
-            data_table(
-                id: 'dataframe_example',
-                columns: @selected_users,
-                data: data.map { |row| row.map { |val| val.round(4) } } # Round for display
-              )
-        end
+      if data.empty?
+        alert('Not enough data for rolling average.', style: :warning)
+      else
+        data_table(
+          id: 'dataframe_example',
+          columns: @selected_users,
+          data: data.map { |row| row.map { |val| val.round(4) } } # Round for display
+        )
+      end
     end
   end
 end
