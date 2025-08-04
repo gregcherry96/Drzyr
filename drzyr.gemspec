@@ -16,10 +16,15 @@ Gem::Specification.new do |spec|
   spec.executables   = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ['lib']
 
-  spec.add_dependency 'sinatra'
-  spec.add_dependency 'async-websocket'
-  spec.add_dependency 'falcon'
-  spec.add_dependency 'rack', '~> 3.1'
+  spec.required_ruby_version = '>= 3.4.0'
 
-  spec.add_development_dependency 'rubocop', '~> 1.79'
+  spec.add_dependency 'base64'
+  spec.add_dependency 'rackup'
+  spec.add_dependency 'puma'
+  spec.add_dependency 'sinatra'
+  spec.add_dependency 'sinatra-contrib'
+  spec.add_dependency 'sinatra-reloader'
+  spec.add_dependency 'sinatra-websocket'
+
+  spec.add_development_dependency 'rubocop'
 end

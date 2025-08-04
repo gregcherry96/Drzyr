@@ -4,21 +4,41 @@
 
 require 'sinatra/base'
 require 'sinatra/namespace'
-require 'async/websocket'
+require 'sinatra-websocket'
 require 'json'
 require 'securerandom'
 
 module Drzyr
+  module_function
+
+  def self.rerun_page(path, ws, session_id)
+    page_block = Drzyr::Server.routes['GET'].find { |route| route[0].match(path) }&.last
+    Drzyr::Logger.info "Rerunning page: '#{path}'. Page block found: #{!page_block.nil?}"
+    return {}.to_json unless page_block
+
+    state.synchronized do
+      page_state = state.state[session_id][path]
+      pending_presses = state.pending_button_presses.fetch(ws, {})
+      builder = UIBuilder.new(page_state, pending_presses)
+      builder.instance_exec(&page_block)
+      {
+        type: 'render',
+        elements: builder.ui_elements,
+        sidebar_elements: builder.sidebar_elements,
+        navbar: builder.navbar_config
+      }
+    end
+  end
+
   class Server < Sinatra::Base
-    # --- Sinatra Configuration ---
     register Sinatra::Namespace
     set :public_folder, -> { File.expand_path('../public', __dir__) }
     set :views, -> { File.expand_path('../public', __dir__) }
+    set :server, 'puma'
+    set :sockets, []
 
-    # --- Helpers ---
     helpers do
       include UI_DSL
-
       def render_ui_if_needed
         if @ui_elements.any? || @sidebar_elements.any?
           server_rendered_data = {
@@ -31,74 +51,60 @@ module Drzyr
       end
     end
 
-    # --- Middleware Hooks ---
     before do
       initialize_ui_state({}, request)
     end
 
     after do
       ui_content = render_ui_if_needed
-      if ui_content && !response.body.first&.is_a?(String)
-         body ui_content
+      if ui_content && body.empty?
+        body ui_content
       end
     end
 
-    # --- WebSocket Handling with async-websocket ---
     get '/websocket' do
-      # Hijack the connection from the webserver to handle it with async-websocket
-      hijack do |socket|
-        connection = Async::WebSocket::Connection.new(socket)
-        session_id = nil
-        path = nil
-
-        Drzyr.state.synchronized do
+      request.websocket do |ws|
+        ws.onopen do
           session_id = SecureRandom.hex(16)
-          Drzyr.state.connections[connection] = { session_id: session_id, path: nil }
+          ws.instance_variable_set(:@session_id, session_id)
+          settings.sockets << ws
+          Drzyr.state.connections[ws] = { session_id: session_id, path: nil }
           Drzyr::Logger.info "New connection opened with session ID: #{session_id}"
         end
-
-        while (message = connection.read)
-          data = JSON.parse(message)
-          path ||= data['path']
-          conn_info = Drzyr.state.connections[connection]
-          break unless conn_info
-
-          Drzyr.state.synchronized { conn_info[:path] ||= path }
-          handle_message(data, path, connection, session_id) if path
+        ws.onmessage do |msg|
+          data = JSON.parse(msg)
+          path = data['path']
+          session_id = ws.instance_variable_get(:@session_id)
+          handle_message(data, path, ws, session_id)
         end
-      rescue Protocol::WebSocket::ClosedError
-        Drzyr::Logger.info "WebSocket connection closed cleanly."
-      ensure
-        Drzyr.state.synchronized do
-          if (conn_info = Drzyr.state.connections.delete(connection))
+        ws.onclose do
+          settings.sockets.delete(ws)
+          conn_info = Drzyr.state.connections.delete(ws)
+          if conn_info
             session_id = conn_info[:session_id]
             Drzyr.state.state.delete(session_id)
             Drzyr::Logger.info "Session closed and state cleared for: #{session_id}"
           end
-          Drzyr.state.pending_button_presses.delete(connection)
         end
-        connection.close
       end
     end
 
-    # --- Private Methods ---
     private
 
     def handle_message(data, path, ws, session_id)
       app_state = Drzyr.state
+      result = nil
       app_state.synchronized do
         case data['type']
-        when 'client_ready'
         when 'update'
           app_state.state[session_id][path][data['widget_id']] = data['value']
         when 'button_press'
           app_state.pending_button_presses[ws] ||= {}
           app_state.pending_button_presses[ws][data['widget_id']] = true
         end
+        result = Drzyr.rerun_page(path, ws, session_id)
       end
-      result = Drzyr.rerun_page(path, ws, session_id)
-      ws.write({ type: 'render', **result }.to_json)
-      ws.flush
+      ws.send(result.to_json)
     end
   end
 end

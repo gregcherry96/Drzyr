@@ -2,8 +2,15 @@
 
 # frozen_string_literal: true
 
-# Now require your application code
-require_relative './app'
+require 'bundler/setup'
+Bundler.require(:default)
 
-# Falcon will automatically use this file.
-run Drzyr::Server.freeze.app
+# Load the entire Drzyr framework from the single file.
+require_relative './lib/drzyr'
+
+# Load all route files, which will add routes to the Drzyr::Server class.
+require_relative './app'
+Dir['./routes/**/*.rb'].each { |file| require_relative file }
+
+# Run the application.
+run Drzyr::Server
