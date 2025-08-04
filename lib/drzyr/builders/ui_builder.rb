@@ -1,14 +1,20 @@
-# frozen_string_literal: true
-
 # lib/drzyr/builders/ui_builder.rb
 
-module Drzyr
-  class UIBuilder
-    attr_reader :ui_elements, :sidebar_elements, :navbar_config
+# frozen_string_literal: true
 
-    def initialize(page_state, pending_presses)
+module Drzyr
+  # This module contains the core UI-building DSL methods.
+  # It expects to be included in a context that has the necessary instance variables.
+  module UI_DSL
+    def self.included(base)
+      attr_reader :ui_elements, :sidebar_elements, :navbar_config, :page_state
+    end
+
+    # Initializes the state needed for building a UI.
+    def initialize_ui_state(page_state, request = nil)
       @page_state = page_state
-      @pending_presses = pending_presses
+      @pending_presses = {} # This is only used for WebSocket re-renders.
+      @request = request
       @ui_elements = []
       @sidebar_elements = []
       @capturing_sidebar = false
@@ -78,7 +84,6 @@ module Drzyr
     def cache(key)
       cache_key = "cache_#{key}"
       return @page_state[cache_key] if @page_state.key?(cache_key)
-
       result = yield
       @page_state[cache_key] = result
     end
@@ -155,16 +160,9 @@ module Drzyr
     def date_range_picker(id:, label:, default: nil, error: nil)
       default_range = default || [Date.today, Date.today + 7]
       default_str = "#{default_range[0]} - #{default_range[1]}"
-
       value_str = @page_state.fetch(id, default_str)
-
       add_input_element('date_range_picker', id, label, value_str, error: error)
-
-      value_str.split(' - ').map do |d|
-        Date.parse(d)
-      rescue StandardError
-        nil
-      end.compact
+      value_str.split(' - ').map { |d| Date.parse(d) rescue nil }.compact
     end
 
     def checkbox(id:, label:, error: nil)
@@ -247,6 +245,17 @@ module Drzyr
     def add_input_element(type, id, label, value, error: nil, **attrs)
       add_element(type, { id: id, label: label, value: value, error: error, **attrs })
       value
+    end
+  end
+
+  # The UIBuilder is used for re-rendering WebSocket updates.
+  class UIBuilder
+    include UI_DSL
+
+    def initialize(page_state, pending_presses = {})
+      # For re-renders, we don't have a Roda request, but we have pending presses.
+      initialize_ui_state(page_state)
+      @pending_presses = pending_presses
     end
   end
 end

@@ -301,3 +301,89 @@ react '/streamlit-example' do
     end
   end
 end
+
+# routes/examples.rb
+
+# This file is now loaded into the Drzyr::Server context.
+# All routes are defined directly on the server class.
+
+# --- A simple in-memory "database" for our examples ---
+$users = {
+  1 => { name: 'Alice', role: 'admin' },
+  2 => { name: 'Bob', role: 'user' }
+}
+$next_user_id = 3
+
+# --- Filters ---
+before '/api/*' do
+  puts "--> API Request to #{request.path} at #{Time.now.iso8601}"
+end
+
+before '/secret' do
+  unless request.env['HTTP_X_API_KEY'] == 'supersecret'
+    halt 401, { 'Content-Type' => 'application/json' }, { error: 'Unauthorized' }.to_json
+  end
+end
+
+after '/api/*' do
+  puts "<-- API Request to #{request.path} Finished"
+end
+
+# --- Standard Routes ---
+get '/hello' do
+  'Hello, World!' # This will be returned as an API response
+end
+
+get '/secret' do
+  'This is the secret area.'
+end
+
+# --- UI Route ---
+# Any route can build a UI by simply using the UI DSL methods.
+get '/welcome' do
+  h1 "Welcome to Drzyr on Sinatra!"
+  p "Any route can now build a UI with the simple DSL."
+  p "The current path is: #{request.path}"
+end
+
+# --- Namespaced API Routes ---
+namespace '/api/v1' do
+  get '/users' do
+    $users
+  end
+
+  post '/users' do
+    new_user = JSON.parse(request.body.read)
+    $users[$next_user_id] = new_user
+    $next_user_id += 1
+    status 201
+    body new_user.to_json
+  end
+
+  put '/users/:id' do
+    user_id = params['id'].to_i
+    if $users[user_id]
+      $users[user_id] = JSON.parse(request.body.read)
+      $users[user_id]
+    else
+      halt 404, { error: 'User not found' }.to_json
+    end
+  end
+
+  # ... (other API routes like patch and delete follow the same Sinatra pattern)
+end
+
+
+# --- Interactive React Route ---
+# `react` is now just a GET route that builds a UI.
+get '/counter' do
+  # `page_state` is now available through the UI DSL helper
+  clicks = page_state.fetch('clicks', 0)
+
+  if button(id: 'increment_button', text: 'Increment')
+    page_state['clicks'] = clicks + 1
+  end
+
+  h1 'Simple Counter'
+  p "Button has been clicked #{page_state.fetch('clicks', 0)} times."
+end

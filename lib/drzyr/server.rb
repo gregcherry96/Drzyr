@@ -2,127 +2,93 @@
 
 # frozen_string_literal: true
 
+require 'sinatra/base'
+require 'sinatra/namespace'
+require 'async/websocket'
 require 'json'
 require 'securerandom'
-require 'roda'
-require 'async/websocket'
 
 module Drzyr
-  module_function
+  class Server < Sinatra::Base
+    # --- Sinatra Configuration ---
+    register Sinatra::Namespace
+    set :public_folder, -> { File.expand_path('../public', __dir__) }
+    set :views, -> { File.expand_path('../public', __dir__) }
 
-  @state_lock = Mutex.new
+    # --- Helpers ---
+    helpers do
+      include UI_DSL
 
-  def state
-    return @state if @state
-
-    @state_lock.synchronize do
-      @state ||= StateManager.new
-    end
-    @state
-  end
-
-  def register_page(path, type, &block)
-    state.pages[path] = { type: type, block: block }
-  end
-
-  def rerun_page(path, ws, session_id)
-    page_block = state.pages.dig(path, :block)
-    Logger.info "Rerunning page: '#{path}'. Page block found: #{!page_block.nil?}"
-    return {} unless page_block
-
-    elements, sidebar_elements, navbar_config = nil
-
-    state.synchronized do
-      page_state = state.state[session_id][path]
-      pending_presses_for_ws = state.pending_button_presses.fetch(ws, {})
-
-      builder = UIBuilder.new(page_state, pending_presses_for_ws)
-      builder.instance_exec(&page_block)
-
-      elements = builder.ui_elements
-      sidebar_elements = builder.sidebar_elements
-      navbar_config = builder.navbar_config
-    end
-
-    { elements: elements, sidebar_elements: sidebar_elements, navbar: navbar_config }
-  end
-
-  # The Server is now a Roda application using the async-websockets plugin
-  class Server < Roda
-    plugin :public, root: File.expand_path('../public', __dir__)
-    plugin :render, views: File.expand_path('../public', __dir__)
-    plugin :websockets
-
-    route do |r|
-      r.public # Serve static files
-
-      # WebSocket connection handling
-      r.on 'websocket' do
-        r.websocket do |ws|
-          session_id = nil
-          path = nil
-
-          Drzyr.state.synchronized do
-            session_id = SecureRandom.hex(16)
-            Drzyr.state.connections[ws] = { session_id: session_id, path: nil }
-            Drzyr::Logger.info "New connection opened with session ID: #{session_id}"
-          end
-
-          while (event_data = ws.read)
-            data = JSON.parse(event_data)
-            path ||= data['path']
-
-            conn_info = Drzyr.state.connections[ws]
-            break unless conn_info
-
-            Drzyr.state.synchronized { conn_info[:path] ||= path }
-            handle_message(data, path, ws, session_id) if path
-          end
-        rescue Protocol::WebSocket::ClosedError
-          # This is a normal closure, log it cleanly
-          Drzyr::Logger.info 'WebSocket connection closed cleanly.'
-        rescue IOError, Errno::EPIPE => e
-          # This handles other potential I/O errors
-          Drzyr::Logger.info "WebSocket Error: #{e.class} - #{e.message}"
-        ensure
-          # Cleanup on close
-          Drzyr.state.synchronized do
-            conn_info = Drzyr.state.connections.delete(ws)
-            if conn_info
-              session_id = conn_info[:session_id]
-              Drzyr.state.state.delete(session_id)
-              Drzyr::Logger.info "Session closed and state cleared for: #{session_id}"
-            end
-            Drzyr.state.pending_button_presses.delete(ws)
-          end
-          ws = nil
+      def render_ui_if_needed
+        if @ui_elements.any? || @sidebar_elements.any?
+          server_rendered_data = {
+            main_content: HtmlRenderer.render(@ui_elements),
+            sidebar_content: HtmlRenderer.render(@sidebar_elements),
+            navbar: @navbar_config
+          }
+          erb :index, locals: { server_rendered: server_rendered_data }, layout: false
         end
       end
+    end
 
-      # Capture the current path to look up in our pages hash
-      page_config = Drzyr.state.pages[r.path]
+    # --- Middleware Hooks ---
+    before do
+      initialize_ui_state({}, request)
+    end
 
-      if page_config
-        builder = UIBuilder.new({}, {}) # Initial render is stateless
-        builder.instance_exec(&page_config[:block])
-        server_rendered_data = {
-          main_content: HtmlRenderer.render(builder.ui_elements),
-          sidebar_content: HtmlRenderer.render(builder.sidebar_elements),
-          navbar: builder.navbar_config
-        }
-        view('index', locals: { server_rendered: server_rendered_data }, layout: false)
+    after do
+      ui_content = render_ui_if_needed
+      if ui_content && !response.body.first&.is_a?(String)
+         body ui_content
       end
     end
 
+    # --- WebSocket Handling with async-websocket ---
+    get '/websocket' do
+      # Hijack the connection from the webserver to handle it with async-websocket
+      hijack do |socket|
+        connection = Async::WebSocket::Connection.new(socket)
+        session_id = nil
+        path = nil
+
+        Drzyr.state.synchronized do
+          session_id = SecureRandom.hex(16)
+          Drzyr.state.connections[connection] = { session_id: session_id, path: nil }
+          Drzyr::Logger.info "New connection opened with session ID: #{session_id}"
+        end
+
+        while (message = connection.read)
+          data = JSON.parse(message)
+          path ||= data['path']
+          conn_info = Drzyr.state.connections[connection]
+          break unless conn_info
+
+          Drzyr.state.synchronized { conn_info[:path] ||= path }
+          handle_message(data, path, connection, session_id) if path
+        end
+      rescue Protocol::WebSocket::ClosedError
+        Drzyr::Logger.info "WebSocket connection closed cleanly."
+      ensure
+        Drzyr.state.synchronized do
+          if (conn_info = Drzyr.state.connections.delete(connection))
+            session_id = conn_info[:session_id]
+            Drzyr.state.state.delete(session_id)
+            Drzyr::Logger.info "Session closed and state cleared for: #{session_id}"
+          end
+          Drzyr.state.pending_button_presses.delete(connection)
+        end
+        connection.close
+      end
+    end
+
+    # --- Private Methods ---
     private
 
     def handle_message(data, path, ws, session_id)
-      Logger.info "Handling message: #{data.inspect}"
       app_state = Drzyr.state
       app_state.synchronized do
         case data['type']
         when 'client_ready'
-          # No state change needed, just trigger a re-render
         when 'update'
           app_state.state[session_id][path][data['widget_id']] = data['value']
         when 'button_press'
@@ -131,8 +97,8 @@ module Drzyr
         end
       end
       result = Drzyr.rerun_page(path, ws, session_id)
-      ws&.write({ type: 'render', **result }.to_json)
-      ws&.flush
+      ws.write({ type: 'render', **result }.to_json)
+      ws.flush
     end
   end
 end
