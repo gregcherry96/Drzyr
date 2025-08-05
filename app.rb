@@ -2,52 +2,26 @@
 
 # frozen_string_literal: true
 
-# --- Helper methods ---
-# These are defined globally and are available in the routes.
+require_relative 'lib/drzyr'
+require 'digest/md5' # For the showcase example
 
-def slugify(title)
-  title.downcase.strip.gsub(' ', '-').gsub(/[^\w-]/, '')
-end
+# --- Main Application Class ---
+class Drzyr::App
+  # CORRECTED: Set the root, views, and public folder paths correctly.
+  set :root, File.dirname(__FILE__)
+  set :views, -> { File.join(root, 'lib/public') }
+  set :public_folder, -> { File.join(root, 'lib/public') }
 
-def show_case(title, description, code_string, &block)
-  h2 title, id: slugify(title)
-  p description
-  divider
-  columns do |c|
-    c.column(&block)
-    c.column { code(code_string, language: 'ruby') }
+  # --- Custom DSL Methods ---
+  def self.react(path, &block)
+    get(path, &block)
   end
-end
 
-def rolling_average(data, window_size)
-  return data if window_size <= 1
-  averaged_data = []
-  data.each_with_index do |row, i|
-    next if i < window_size - 1
-    window = data[(i - window_size + 1)..i]
-    new_row = window.transpose.map { |col| col.sum / window_size.to_f }
-    averaged_data << new_row
-  end
-  averaged_data
-end
-
-def randn
-  theta = 2 * Math::PI * rand
-  rho = Math.sqrt(-2 * Math.log(1 - rand))
-  rho * Math.cos(theta)
-end
-
-
-# --- Route Definitions ---
-# All routes are now defined inside the Drzyr::Server class.
-
-class Drzyr::Server < Sinatra::Base
+  # --- Route Definitions ---
   get '/' do
-    # You can render a welcome page or redirect here
     redirect '/showcase'
   end
 
-  # --- Main Showcase Application ---
   react '/showcase' do
     navbar do
       brand 'Drzyr Showcase'
@@ -109,77 +83,6 @@ class Drzyr::Server < Sinatra::Base
         page_state['showcase_clicks'] = page_state.fetch('showcase_clicks', 0) + 1
       end
       p "Clicked #{page_state.fetch('showcase_clicks', 0)} times."
-    end
-
-    # ... (Other showcase components) ...
-  end
-
-  # --- Streamlit Example Route ---
-  react '/streamlit-example' do
-    navbar do
-      brand 'Drzyr Showcase'
-      link 'Showcase', href: '/showcase'
-      link 'Streamlit Example', href: '/streamlit-example'
-    end
-
-    h1 'Streamlit Example 📊'
-    p 'This page demonstrates a simple interactive chart and data table.'
-
-    all_users = ["Alice", "Bob", "Charly"]
-
-    form_group(label: 'Controls') do
-      @selected_users = multi_select(id: 'users_multiselect', label: 'Users', options: all_users, default: all_users)
-      @rolling_average_enabled = checkbox(id: 'rolling_average_toggle', label: 'Enable 7-day Rolling Average')
-    end
-
-    user_indices = @selected_users.map { |u| all_users.index(u) }.compact
-    data_key = "data_#{@selected_users.join('_')}"
-
-    all_data = cache(data_key) do
-      srand(42) # for reproducibility
-      Array.new(20) { Array.new(all_users.length) { randn } }
-    end
-
-    data = all_data.map { |row| user_indices.map { |i| row[i] } }
-
-    if @rolling_average_enabled
-      data = rolling_average(data, 7)
-    end
-
-    tabs do |t|
-      t.tab('Chart') do
-          if data.empty?
-              alert("Not enough data for rolling average.", style: :warning)
-          else
-              chart(
-                  id: 'line_chart_example',
-                  data: {
-                    labels: (1..data.length).to_a,
-                    datasets: @selected_users.map.with_index do |user, i|
-                      {
-                        label: user,
-                        data: data.map { |row| row[i] },
-                        fill: false,
-                        borderColor: "##{Digest::MD5.hexdigest(user)[0, 6]}",
-                        tension: 0.1
-                      }
-                    end
-                  },
-                  options: { type: 'line', responsive: true }
-                )
-          end
-      end
-      t.tab('Dataframe') do
-          if data.empty?
-              alert("Not enough data for rolling average.", style: :warning)
-          else
-              data_table(
-                  id: 'dataframe_example',
-                  columns: @selected_users,
-                  data: data.map { |row| row.map { |val| val.round(4) } }
-                )
-          end
-      end
     end
   end
 end

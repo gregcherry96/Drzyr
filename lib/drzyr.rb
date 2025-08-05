@@ -3,8 +3,7 @@
 
 # --- External Gems ---
 require 'sinatra/base'
-require 'sinatra/namespace'
-require 'sinatra-websocket'
+require 'faye/websocket'
 require 'json'
 require 'erb'
 require 'securerandom'
@@ -18,57 +17,71 @@ require_relative 'drzyr/html_renderer'
 require_relative 'drzyr/builders/column_builder'
 require_relative 'drzyr/builders/navbar_builder'
 require_relative 'drzyr/builders/tab_builder'
-require_relative 'drzyr/builders/ui_builder' # Defines UI_DSL
+require_relative 'drzyr/builders/ui_builder' # Contains the UI_DSL module
 
 module Drzyr
-  module_function
-
-  def self.state
-    @state ||= StateManager.new
-  end
-
-  def self.rerun_page(path, ws, session_id)
-    page_block = Drzyr::Server.routes['GET'].find { |route| route[0].match(path) }&.last
-    return {}.to_json unless page_block
-
-    state.synchronized do
-      page_state = state.state[session_id][path]
-      pending_presses = state.pending_button_presses.fetch(ws, {})
-      builder = UIBuilder.new(page_state, pending_presses)
-      builder.instance_exec(&page_block)
-      {
-        type: 'render',
-        elements: builder.ui_elements,
-        sidebar_elements: builder.sidebar_elements,
-        navbar: builder.navbar_config
-      }
-    end
-  end
-
-  # --- The Core Server Class ---
-  class Server < Sinatra::Base
-    # --- Sinatra Configuration & DSL ---
-    register Sinatra::Namespace
-
-    set :public_folder, -> { File.join(Dir.pwd, 'lib', 'public') }
-    set :views, -> { File.join(Dir.pwd, 'lib', 'public') }
-
+  # This is the core application class. All routes and logic will be attached to it.
+  class App < Sinatra::Base
+    # --- Sinatra Configuration ---
     set :server, 'puma'
     set :sockets, []
+    set :root, -> { File.expand_path('../..', __dir__) }
+    set :views, -> { File.join(root, 'lib/public') }
+    set :public_folder, -> { File.join(root, 'lib/public') }
 
-    # --- Custom DSL Methods ---
-    def self.react(path, &block)
-      get(path, &block)
+
+    # --- Drzyr State Management ---
+    def self.state
+      @state ||= Drzyr::StateManager.new
     end
 
-    # --- Helpers & Middleware ---
+    def state
+      self.class.state
+    end
+
+    # --- UI DSL ---
+    helpers UI_DSL
+
+    # --- Re-rendering Logic ---
+    def rerun_page(path, ws, session_id)
+      page_block = self.class.routes['GET'].find { |route| route[0].match(path) }&.last
+      return {}.to_json unless page_block
+
+      page_state = state.state[session_id][path]
+      pending_presses = state.pending_button_presses.fetch(ws, {})
+
+      initialize_ui_state(page_state, nil, pending_presses)
+      instance_exec(&page_block)
+
+      {
+        type: 'render',
+        elements: @ui_elements,
+        sidebar_elements: @sidebar_elements,
+        navbar: @navbar_config
+      }
+    end
+
+    # --- Sinatra Hooks ---
+    before do
+      initialize_ui_state({}, request, {})
+    end
+
+    # CORRECTED: The condition is now robust. If any UI content was generated,
+    # this block will now correctly replace the response body with the rendered HTML.
+    after do
+      ui_content = render_ui_if_needed
+      if ui_content
+        body ui_content
+      end
+    end
+
+    # --- View Helpers ---
     helpers do
-      include UI_DSL
       def render_ui_if_needed
-        if @ui_elements.any? || @sidebar_elements.any?
+        if @ui_elements&.any? || @sidebar_elements&.any?
           server_rendered_data = {
-            main_content: HtmlRenderer.render(@ui_elements),
-            sidebar_content: HtmlRenderer.render(@sidebar_elements),
+            main_content: Drzyr::HtmlRenderer.render(@ui_elements),
+            sidebar_content: Drzyr::HtmlRenderer.render(@sidebar_elements),
             navbar: @navbar_config
           }
           erb :index, locals: { server_rendered: server_rendered_data }, layout: false
@@ -76,59 +89,52 @@ module Drzyr
       end
     end
 
-    before { initialize_ui_state({}, request) }
-
-    # CORRECTED: This `after` filter is now more robust.
-    after do
-      ui_content = render_ui_if_needed
-      # Only modify the body if it's from a UI route (i.e., an array) and currently empty.
-      if ui_content && body.is_a?(Array) && body.empty?
-        body ui_content
-      end
-    end
-
     # --- WebSocket Handling ---
     get '/websocket' do
-      request.websocket do |ws|
-        ws.onopen do
+      if Faye::WebSocket.websocket?(request.env)
+        app_instance = self
+        ws = Faye::WebSocket.new(request.env)
+
+        ws.on :open do |event|
           session_id = SecureRandom.hex(16)
-          ws.instance_variable_set(:@session_id, session_id)
           settings.sockets << ws
-          Drzyr.state.connections[ws] = { session_id: session_id, path: nil }
+          state.connections[ws] = { session_id: session_id, path: nil }
           Drzyr::Logger.info "New connection opened with session ID: #{session_id}"
         end
-        ws.onmessage do |msg|
-          data = JSON.parse(msg)
+
+        ws.on :message do |event|
+          data = JSON.parse(event.data)
           path = data['path']
-          session_id = ws.instance_variable_get(:@session_id)
-          handle_message(data, path, ws, session_id)
+          session_id = state.connections[ws][:session_id]
+
+          case data['type']
+          when 'update'
+            state.state[session_id][path][data['widget_id']] = data['value']
+          when 'button_press'
+            state.pending_button_presses[ws] ||= {}
+            state.pending_button_presses[ws][data['widget_id']] = true
+          end
+
+          result = app_instance.rerun_page(path, ws, session_id)
+          ws.send(result.to_json)
         end
-        ws.onclose do
+
+        ws.on :close do |event|
           settings.sockets.delete(ws)
-          conn_info = Drzyr.state.connections.delete(ws)
+          conn_info = state.connections.delete(ws)
           if conn_info
             session_id = conn_info[:session_id]
-            Drzyr.state.state.delete(session_id)
+            state.state.delete(session_id)
             Drzyr::Logger.info "Session closed and state cleared for: #{session_id}"
           end
+          ws = nil
         end
-      end
-    end
 
-    private
-    def handle_message(data, path, ws, session_id)
-      result = nil
-      Drzyr.state.synchronized do
-        case data['type']
-        when 'update'
-          Drzyr.state.state[session_id][path][data['widget_id']] = data['value']
-        when 'button_press'
-          Drzyr.state.pending_button_presses[ws] ||= {}
-          Drzyr.state.pending_button_presses[ws][data['widget_id']] = true
-        end
-        result = Drzyr.rerun_page(path, ws, session_id)
+        ws.rack_response
+      else
+        status 400
+        'Expected a WebSocket connection.'
       end
-      ws.send(result.to_json)
     end
   end
 end

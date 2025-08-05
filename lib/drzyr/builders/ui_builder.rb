@@ -7,13 +7,13 @@ module Drzyr
   # It expects to be included in a context that has the necessary instance variables.
   module UI_DSL
     def self.included(base)
-      attr_reader :ui_elements, :sidebar_elements, :navbar_config, :page_state
+      attr_reader :ui_elements, :sidebar_elements, :navbar_config, :page_state, :pending_presses
     end
 
-    # Initializes the state needed for building a UI.
-    def initialize_ui_state(page_state, request = nil)
+    # CORRECTED: The method now correctly accepts the 'pending_presses' argument.
+    def initialize_ui_state(page_state, request = nil, pending_presses = {})
       @page_state = page_state
-      @pending_presses = {} # This is only used for WebSocket re-renders.
+      @pending_presses = pending_presses
       @request = request
       @ui_elements = []
       @sidebar_elements = []
@@ -245,17 +245,6 @@ module Drzyr
     def add_input_element(type, id, label, value, error: nil, **attrs)
       add_element(type, { id: id, label: label, value: value, error: error, **attrs })
       value
-    end
-  end
-
-  # The UIBuilder is used for re-rendering WebSocket updates.
-  class UIBuilder
-    include UI_DSL
-
-    def initialize(page_state, pending_presses = {})
-      # For re-renders, we don't have a Roda request, but we have pending presses.
-      initialize_ui_state(page_state)
-      @pending_presses = pending_presses
     end
   end
 end
