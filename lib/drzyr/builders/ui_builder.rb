@@ -4,7 +4,7 @@
 
 module Drzyr
   class UIBuilder
-    attr_reader :ui_elements, :sidebar_elements, :navbar_config
+    attr_reader :ui_elements, :sidebar_elements, :navbar_config, :page_state
 
     def initialize(page_state, pending_presses)
       @page_state = page_state

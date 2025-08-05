@@ -5,7 +5,7 @@
 require_relative 'lib/drzyr'
 
 def show_case(title, description, code_string, &block)
-  h2 title, id: slugify(title)
+  h2 title, id: title
   p description
   divider
   columns do |c|
