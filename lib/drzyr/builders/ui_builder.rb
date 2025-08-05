@@ -1,20 +1,14 @@
-# lib/drzyr/builders/ui_builder.rb
-
 # frozen_string_literal: true
 
-module Drzyr
-  # This module contains the core UI-building DSL methods.
-  # It expects to be included in a context that has the necessary instance variables.
-  module UI_DSL
-    def self.included(base)
-      attr_reader :ui_elements, :sidebar_elements, :navbar_config, :page_state, :pending_presses
-    end
+# lib/drzyr/builders/ui_builder.rb
 
-    # CORRECTED: The method now correctly accepts the 'pending_presses' argument.
-    def initialize_ui_state(page_state, request = nil, pending_presses = {})
+module Drzyr
+  class UIBuilder
+    attr_reader :ui_elements, :sidebar_elements, :navbar_config
+
+    def initialize(page_state, pending_presses)
       @page_state = page_state
       @pending_presses = pending_presses
-      @request = request
       @ui_elements = []
       @sidebar_elements = []
       @capturing_sidebar = false
@@ -84,6 +78,7 @@ module Drzyr
     def cache(key)
       cache_key = "cache_#{key}"
       return @page_state[cache_key] if @page_state.key?(cache_key)
+
       result = yield
       @page_state[cache_key] = result
     end
@@ -160,9 +155,16 @@ module Drzyr
     def date_range_picker(id:, label:, default: nil, error: nil)
       default_range = default || [Date.today, Date.today + 7]
       default_str = "#{default_range[0]} - #{default_range[1]}"
+
       value_str = @page_state.fetch(id, default_str)
+
       add_input_element('date_range_picker', id, label, value_str, error: error)
-      value_str.split(' - ').map { |d| Date.parse(d) rescue nil }.compact
+
+      value_str.split(' - ').map do |d|
+        Date.parse(d)
+      rescue StandardError
+        nil
+      end.compact
     end
 
     def checkbox(id:, label:, error: nil)
