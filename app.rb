@@ -1,6 +1,6 @@
-# app.rb
 
 # frozen_string_literal: true
+# app.rb
 
 require_relative 'lib/drzyr'
 
@@ -14,7 +14,6 @@ def show_case(title, description, code_string, &block)
   end
 end
 
-# --- Main Showcase Application ---
 react '/' do
   navbar do
     brand 'Drzyr Showcase'
@@ -77,6 +76,30 @@ react '/' do
     end
     p "Clicked #{page_state.fetch('showcase_clicks', 0)} times."
   end
+end
+
+get '/test' do
+  h1 'Test Page'
+  p 'This is a test page to demonstrate the Drzyr framework.'
+  p 'You can add more content here as needed.'
+end
+
+react '/test/1' do
+  navbar do
+    brand 'Drzyr Showcase'
+    link 'Showcase', href: '/showcase'
+    link 'Test Page 1', href: '/test/1'
+  end
+
+  h1 'Test Page 1'
+  p 'This is the first test page to demonstrate the Drzyr framework.'
+  p 'Feel free to modify this page as needed.'
+end
+
+get '/test/2' do
+  h1 'Test Page 2'
+  p 'This is another test page to demonstrate the Drzyr framework.'
+  p 'Feel free to modify this page as needed.'
 end
 
 # --- Streamlit Example Route ---
