@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # External gems
 require 'roda'
 require 'faye/websocket'
