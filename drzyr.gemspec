@@ -19,13 +19,11 @@ It uses a reactive, component-based approach to building user interfaces.'
   end
   spec.require_paths = ['lib']
 
-  spec.add_dependency 'base64'
   spec.add_dependency 'faye-websocket'
   spec.add_dependency 'puma'
   spec.add_dependency 'rackup'
-  spec.add_dependency 'sinatra'
-  spec.add_dependency 'sinatra-contrib'
-  spec.add_dependency 'sinatra-reloader'
+  spec.add_dependency 'roda'
+  spec.add_dependency 'tilt'
 
   spec.add_development_dependency 'rubocop'
 end
