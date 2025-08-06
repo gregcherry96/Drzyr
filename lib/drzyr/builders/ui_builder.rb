@@ -1,10 +1,9 @@
 # frozen_string_literal: true
 
 # lib/drzyr/builders/ui_builder.rb
-
 module Drzyr
   class UIBuilder
-    attr_reader :ui_elements, :sidebar_elements, :navbar_config, :page_state
+    attr_reader :ui_elements, :sidebar_elements, :navbar_elements, :page_state
 
     def initialize(page_state, pending_presses)
       @page_state = page_state
@@ -12,21 +11,25 @@ module Drzyr
       @ui_elements = []
       @sidebar_elements = []
       @capturing_sidebar = false
-      @navbar_config = nil
+      @navbar_elements = nil
     end
 
     def navbar(&block)
+      Drzyr::Logger.debug "Entering navbar block"
       navbar_builder = NavbarBuilder.new(@page_state)
       navbar_builder.instance_exec(&block)
-      @navbar_config = navbar_builder.elements
+      @navbar_elements = navbar_builder.elements
+      Drzyr::Logger.debug "Exiting navbar block. Found #{@navbar_elements.size} navbar elements."
     end
 
     def sidebar
+      Drzyr::Logger.debug "Entering sidebar block"
       original_capturing_sidebar = @capturing_sidebar
       @capturing_sidebar = true
       yield
     ensure
       @capturing_sidebar = original_capturing_sidebar
+      Drzyr::Logger.debug "Exiting sidebar block. Found #{@sidebar_elements.size} sidebar elements."
     end
 
     (1..6).each do |level|
@@ -104,12 +107,12 @@ module Drzyr
         is_expanded = !is_expanded
         @page_state[expander_id] = is_expanded
       end
-      content = is_expanded ? capture_elements(&block) : []
+      content = is_expanded ? _capture_content(&block) : []
       add_element('expander', id: expander_id, label: label, expanded: is_expanded, content: content)
     end
 
     def form_group(label:, &block)
-      content = capture_elements(&block)
+      content = _capture_content(&block)
       add_element('form_group', label: label, content: content)
     end
 
@@ -219,19 +222,14 @@ module Drzyr
       add_element('columns_container', columns: builder.columns)
     end
 
-    def capture_elements(&block)
-      original_ui_elements = @ui_elements
-      @ui_elements = []
-      original_sidebar_elements = @sidebar_elements
-      @sidebar_elements = []
-      instance_exec(&block)
-      captured = @capturing_sidebar ? @sidebar_elements : @ui_elements
-      @ui_elements = original_ui_elements
-      @sidebar_elements = original_sidebar_elements
-      captured
-    end
-
     private
+
+    # New private helper method for capturing content safely.
+    def _capture_content(&block)
+        capture_builder = Drzyr::UIBuilder.new(@page_state, {})
+        capture_builder.instance_exec(&block)
+        capture_builder.ui_elements
+    end
 
     def deep_merge(h1, h2)
       h1.merge(h2) do |_key, old_val, new_val|
@@ -242,6 +240,9 @@ module Drzyr
     def add_element(type, attributes)
       target_array = @capturing_sidebar ? @sidebar_elements : @ui_elements
       target_array << attributes.merge(type: type)
+      # Log which element is being added and where
+      target_name = @capturing_sidebar ? "sidebar_elements" : "ui_elements"
+      Drzyr::Logger.debug "Adding element of type '#{type}' to #{target_name}"
     end
 
     def add_input_element(type, id, label, value, error: nil, **attrs)

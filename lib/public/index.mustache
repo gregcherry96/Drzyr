@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Drzyr</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre-exp.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre-icons.min.css">
+
+    <link rel="stylesheet" href="/main.css">
+</head>
+<body>
+    <header id="navbar-container" class="navbar navbar-visible">
+      {{{ server_rendered.navbar_content }}}
+    </header>
+
+
+    <div id="layout-container">
+      <div id="sidebar">
+        {{{ server_rendered.sidebar_content }}}
+      </div>
+      <div id="app">
+        {{{ server_rendered.main_content }}}
+      </div>
+    </div>
+
+    <div id="drzyr-templates" style="display: none;">
+      {{#templates}}
+        <script type="text/template" id="template-{{name}}">
+          {{{content}}}
+        </script>
+      {{/templates}}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mustache@4.2.0/mustache.min.js"></script>
+
+    <script>
+      // This global variable will tell our JS if it needs to connect to the WebSocket
+      window.DRZYR_IS_REACTIVE = {{#is_reactive}}true{{/is_reactive}}{{^is_reactive}}false{{/is_reactive}};
+    </script>
+
+    <script src="/js/websocket.js"></script>
+    <script src="/js/layout.js"></script>
+    <script src="/js/templates.js"></script>
+    <script src="/js/renderer.js"></script>
+    <script src="/js/main.js"></script>
+
+    <script>
+      MathJax = {
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']]
+        },
+        svg: {
+          fontCache: 'global'
+        }
+      };
+    </script>
+</body>
+</html>

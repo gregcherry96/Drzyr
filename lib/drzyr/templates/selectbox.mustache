@@ -1,0 +1,11 @@
+<div class="form-group">
+  <label class="form-label" for="{{id}}">{{label}}</label>
+  <select class="form-select" id="{{id}}">
+    {{#options}}
+      <option value="{{.}}" {{#selected}}selected{{/selected}}>{{.}}</option>
+    {{/options}}
+  </select>
+  {{#error}}
+    <p class="form-input-hint">{{error}}</p>
+  {{/error}}
+</div>

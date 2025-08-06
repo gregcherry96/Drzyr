@@ -1,0 +1,7 @@
+<div class="form-group">
+  <label class="form-label" for="{{id}}">{{label}} ({{value}})</label>
+  <input class="slider" type="range" id="{{id}}" min="{{min}}" max="{{max}}" step="{{step}}" value="{{value}}">
+  {{#error}}
+    <p class="form-input-hint">{{error}}</p>
+  {{/error}}
+</div>

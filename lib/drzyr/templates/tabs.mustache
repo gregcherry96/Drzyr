@@ -1,0 +1,12 @@
+<div class="tab-container">
+  <ul class="tab tab-block">
+    {{#labels}}
+      <li class="tab-item {{#active}}active{{/active}}">
+        <a href="#" class="c-hand">{{.}}</a>
+      </li>
+    {{/labels}}
+  </ul>
+  <div class="tab-content p-2">
+    {{{content}}}
+  </div>
+</div>

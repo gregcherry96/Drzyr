@@ -16,7 +16,10 @@ module Drzyr
 
     def self.new_logger(output = $stdout)
       logger = ::Logger.new(output)
-      logger.level = ::Logger::INFO # Default log level
+      # Allow setting the level via an environment variable, defaulting to INFO
+      log_level = ENV['DRZYR_LOG_LEVEL'] || 'INFO'
+      logger.level = ::Logger.const_get(log_level.upcase)
+
       logger.formatter = proc do |severity, datetime, _progname, msg|
         color = COLORS[severity] || '0'
         formatted_time = datetime.strftime('%Y-%m-%d %H:%M:%S')

@@ -1,0 +1,10 @@
+<div class="accordion">
+  <input type="checkbox" id="{{id}}" name="accordion-checkbox" hidden {{#expanded}}checked{{/expanded}}>
+  <label class="accordion-header c-hand" for="{{id}}">
+    <i class="icon icon-arrow-right mr-1"></i>
+    {{label}}
+  </label>
+  <div class="accordion-body">
+    {{{content}}}
+  </div>
+</div>

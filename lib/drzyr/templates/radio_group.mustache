@@ -1,0 +1,12 @@
+<div class="form-group">
+  <label class="form-label">{{label}}</label>
+  {{#options}}
+  <label class="form-radio">
+    <input type="radio" name="{{id}}" value="{{.}}" {{#selected}}checked{{/selected}}>
+    <i class="form-icon"></i> {{.}}
+  </label>
+  {{/options}}
+  {{#error}}
+    <p class="form-input-hint">{{error}}</p>
+  {{/error}}
+</div>

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 # lib/drzyr/builders/tab_builder.rb
-
 module Drzyr
   class TabBuilder
     attr_reader :tabs_content, :tab_labels
@@ -14,7 +13,10 @@ module Drzyr
 
     def tab(label, &block)
       @tab_labels << label
-      @tabs_content[label] = @ui_builder.capture_elements(&block)
+      # Use the new, safe capturing pattern for each tab.
+      capture_builder = Drzyr::UIBuilder.new(@ui_builder.page_state, {})
+      capture_builder.instance_exec(&block)
+      @tabs_content[label] = capture_builder.ui_elements
     end
   end
 end

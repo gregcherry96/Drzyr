@@ -20,6 +20,7 @@ It uses a reactive, component-based approach to building user interfaces.'
   spec.require_paths = ['lib']
 
   spec.add_dependency 'faye-websocket'
+  spec.add_dependency 'mustache'
   spec.add_dependency 'puma'
   spec.add_dependency 'rackup'
   spec.add_dependency 'roda'
