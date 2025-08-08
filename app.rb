@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 # app.rb
-
 require_relative 'lib/drzyr'
 
 def show_case(title, description, code_string, &block)
@@ -14,7 +13,7 @@ def show_case(title, description, code_string, &block)
   end
 end
 
-get '/' do
+react '/' do
   navbar do
     brand 'Drzyr Showcase'
     link 'Showcase', href: '/showcase'

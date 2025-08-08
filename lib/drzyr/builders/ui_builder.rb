@@ -3,7 +3,7 @@
 # lib/drzyr/builders/ui_builder.rb
 module Drzyr
   class UIBuilder
-    attr_reader :ui_elements, :sidebar_elements, :navbar_elements, :page_state
+    attr_reader :ui_elements, :sidebar_elements, :navbar_elements, :page_state, :pending_presses
 
     def initialize(page_state, pending_presses)
       @page_state = page_state
@@ -226,7 +226,8 @@ module Drzyr
 
     # New private helper method for capturing content safely.
     def _capture_content(&block)
-        capture_builder = Drzyr::UIBuilder.new(@page_state, {})
+        # FIX: Pass the pending_presses to the new UIBuilder
+        capture_builder = Drzyr::UIBuilder.new(@page_state, @pending_presses)
         capture_builder.instance_exec(&block)
         capture_builder.ui_elements
     end

@@ -13,8 +13,7 @@ module Drzyr
 
     def tab(label, &block)
       @tab_labels << label
-      # Use the new, safe capturing pattern for each tab.
-      capture_builder = Drzyr::UIBuilder.new(@ui_builder.page_state, {})
+      capture_builder = Drzyr::UIBuilder.new(@ui_builder.page_state, @ui_builder.pending_presses)
       capture_builder.instance_exec(&block)
       @tabs_content[label] = capture_builder.ui_elements
     end

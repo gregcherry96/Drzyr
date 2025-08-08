@@ -6,9 +6,7 @@ module Drzyr
   @state_lock = Mutex.new
 
   def self.state
-    @state_lock.synchronize do
-      @state ||= StateManager.new
-    end
+    @state ||= StateManager.new
   end
 
   def self.register_page(path, type, &block)
@@ -23,15 +21,29 @@ module Drzyr
     end
 
     Logger.info "Rerunning page: '#{path}'"
-    build_ui_for_page(page_block, session_id, path, ws)
+    begin
+      build_ui_for_page(page_block, session_id, path, ws)
+    rescue StandardError => e
+      Logger.error "Error rendering page '#{path}': #{e.message}\n#{e.backtrace.join("\n")}"
+      # Send a structured error payload to the client for rendering.
+      { error: { type: 'error_display', message: e.message, backtrace: e.backtrace.join("\n") } }
+    end
   end
 
   def self.build_ui_for_page(page_block, session_id, path, ws)
     elements, sidebar_elements, navbar_elements = nil
+    session_entry = state.state[session_id]
+    pending_presses_for_ws = {}
+
+    # Atomically get a copy of the pending presses for this connection.
     state.synchronized do
-      page_state = state.state[session_id][path]
-      pending_presses = state.pending_button_presses.fetch(ws, {})
-      builder = UIBuilder.new(page_state, pending_presses)
+      pending_presses_for_ws = state.pending_button_presses.fetch(ws, {}).dup
+    end
+
+    # Lock only this session's data for the UI rendering logic.
+    session_entry[:lock].synchronize do
+      page_state_data = session_entry[:data][path]
+      builder = UIBuilder.new(page_state_data, pending_presses_for_ws)
       builder.instance_exec(&page_block)
       elements = builder.ui_elements
       sidebar_elements = builder.sidebar_elements
@@ -54,7 +66,6 @@ module Drzyr
       if page_config
         render_page(page_config)
       else
-        # This is the new fallback for unknown routes
         response.status = 404
         "<h1>404 Not Found</h1><p>The page you requested could not be found.</p>"
       end
@@ -77,6 +88,7 @@ module Drzyr
       Drzyr.state.synchronized do
         session_id = SecureRandom.hex(16)
         Drzyr.state.connections[ws] = { session_id: session_id, path: nil }
+        Drzyr.state.state[session_id] # This initializes the session state with its lock
         Drzyr::Logger.info "New connection opened with session ID: #{session_id}"
       end
     end
@@ -84,15 +96,14 @@ module Drzyr
     def process_message(ws, event)
       data = JSON.parse(event.data)
       path = data['path']
-      conn_info = Drzyr.state.connections[ws]
+      session_id = nil
 
-      unless conn_info
-        ws.close
-        return
+      Drzyr.state.synchronized do
+        conn_info = Drzyr.state.connections[ws]
+        return unless conn_info
+        session_id = conn_info[:session_id]
+        conn_info[:path] ||= path
       end
-
-      session_id = conn_info[:session_id]
-      Drzyr.state.synchronized { conn_info[:path] ||= path }
 
       handle_message(data, path, ws, session_id) if path
     end
@@ -149,15 +160,23 @@ module Drzyr
     def handle_message(data, path, ws, session_id)
       Logger.info "Handling message: #{data.inspect}"
       app_state = Drzyr.state
-      app_state.synchronized do
-        case data['type']
-        when 'update'
-          app_state.state[session_id][path][data['widget_id']] = data['value']
-        when 'button_press'
+
+      case data['type']
+      when 'update'
+        # Lock only the specific session's data to update its state
+        session_entry = app_state.state[session_id]
+        session_entry[:lock].synchronize do
+          session_entry[:data][path][data['widget_id']] = data['value']
+        end
+      when 'button_press'
+        # Lock the global state to safely update the shared pending_presses hash
+        app_state.synchronized do
           app_state.pending_button_presses[ws] ||= {}
           app_state.pending_button_presses[ws][data['widget_id']] = true
         end
       end
+
+      # Rerun the page to reflect the state change
       result = Drzyr.rerun_page(path, ws, session_id)
       ws&.send({ type: 'render', **result }.to_json)
     end
