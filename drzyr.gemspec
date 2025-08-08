@@ -11,6 +11,7 @@ Gem::Specification.new do |spec|
 It uses a reactive, component-based approach to building user interfaces.'
   spec.homepage      = 'https://github.com/gregcherry96/drzyr'
   spec.license       = 'MIT'
+  spec.required_ruby_version = '>= 3.0.0'
 
   spec.files         = Dir['lib/**/*', 'app.rb', 'Gemfile', 'Rakefile', 'README.md']
   spec.bindir        = 'exe'

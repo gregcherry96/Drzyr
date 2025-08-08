@@ -2,6 +2,9 @@
 
 # lib/drzyr/builders/navbar_builder.rb
 module Drzyr
+  # A DSL builder for creating responsive navigation bars.
+  # It is used within the `UIBuilder#navbar` method to define the links
+  # and brand elements for the application's header.
   class NavbarBuilder
     attr_reader :elements
 

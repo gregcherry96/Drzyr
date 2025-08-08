@@ -2,6 +2,10 @@
 
 # lib/drzyr/state_manager.rb
 module Drzyr
+  # Manages all server-side state for the Drzyr framework. This includes
+  # tracking active WebSocket connections, page definitions, and the state
+  # for each user session. It also handles the locking mechanisms required for
+  # concurrent access to shared data.
   class StateManager
     attr_reader :connections, :pages, :state, :pending_button_presses, :lock
 
@@ -10,7 +14,7 @@ module Drzyr
       @lock = Mutex.new
       @connections = {}
       @pages = {}
-      # The state hash now holds a dedicated lock and data hash for each session.
+      # The state hash holds a dedicated lock and data hash for each session.
       @state = Hash.new do |h, session_id|
         h[session_id] = {
           lock: Mutex.new,

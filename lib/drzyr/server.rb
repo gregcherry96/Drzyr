@@ -2,6 +2,8 @@
 
 require 'mustache'
 
+# The main module for the Drzyr framework, containing the core server logic
+# and state management for building interactive web applications.
 module Drzyr
   @state_lock = Mutex.new
 
@@ -13,110 +15,145 @@ module Drzyr
     state.pages[path] = { type: type, block: block }
   end
 
-  def self.rerun_page(path, ws, session_id)
-    page_block = state.pages.dig(path, :block)
-    unless page_block
-      Logger.info "No page block found for path: '#{path}'"
-      return {}
-    end
+  def self.rerun_page(path, websocket, session_id)
+    page_block = find_page_block(path)
+    return {} unless page_block
 
-    Logger.info "Rerunning page: '#{path}'"
-    begin
-      build_ui_for_page(page_block, session_id, path, ws)
-    rescue StandardError => e
-      Logger.error "Error rendering page '#{path}': #{e.message}\n#{e.backtrace.join("\n")}"
-      # Send a structured error payload to the client for rendering.
-      { error: { type: 'error_display', message: e.message, backtrace: e.backtrace.join("\n") } }
-    end
+    execute_page_build(page_block, path, websocket, session_id)
   end
 
-  def self.build_ui_for_page(page_block, session_id, path, ws)
-    elements, sidebar_elements, navbar_elements = nil
+  def self.build_ui_for_page(page_block, session_id, path, websocket)
     session_entry = state.state[session_id]
-    pending_presses_for_ws = {}
+    pending_presses = state.synchronized { state.pending_button_presses.fetch(websocket, {}).dup }
 
-    # Atomically get a copy of the pending presses for this connection.
-    state.synchronized do
-      pending_presses_for_ws = state.pending_button_presses.fetch(ws, {}).dup
-    end
-
-    # Lock only this session's data for the UI rendering logic.
     session_entry[:lock].synchronize do
-      page_state_data = session_entry[:data][path]
-      builder = UIBuilder.new(page_state_data, pending_presses_for_ws)
-      builder.instance_exec(&page_block)
-      elements = builder.ui_elements
-      sidebar_elements = builder.sidebar_elements
-      navbar_elements = builder.navbar_elements
+      build_elements(page_block, session_entry[:data][path], pending_presses)
     end
-    { elements: elements, sidebar_elements: sidebar_elements, navbar: navbar_elements }
   end
 
+  # The main Roda application class that handles HTTP requests and WebSocket connections.
   class Server < Roda
     plugin :public, root: File.expand_path('../public', __dir__)
 
-    route do |r|
-      r.public
+    route do |request|
+      request.public
 
-      r.on 'websocket' do
-        handle_websocket(r)
+      request.on 'websocket' do
+        handle_websocket(request)
       end
 
-      page_config = Drzyr.state.pages[r.path]
+      page_config = Drzyr.state.pages[request.path]
       if page_config
         render_page(page_config)
       else
         response.status = 404
-        "<h1>404 Not Found</h1><p>The page you requested could not be found.</p>"
+        '<h1>404 Not Found</h1><p>The page you requested could not be found.</p>'
       end
     end
 
     private
 
-    def handle_websocket(r)
-      halt(400) unless Faye::WebSocket.websocket?(r.env)
-      ws = Faye::WebSocket.new(r.env)
+    # --- Websocket Connection Handlers ---
 
-      ws.on(:open) { setup_new_session(ws) }
-      ws.on(:message) { |event| process_message(ws, event) }
-      ws.on(:close) { cleanup_session(ws) }
+    def handle_websocket(request)
+      halt(400) unless Faye::WebSocket.websocket?(request.env)
+      websocket = Faye::WebSocket.new(request.env)
 
-      r.halt(ws.rack_response)
+      websocket.on(:open) { setup_new_session(websocket) }
+      websocket.on(:message) { |event| process_message(websocket, event) }
+      websocket.on(:close) { cleanup_session(websocket) }
+
+      request.halt(websocket.rack_response)
     end
 
-    def setup_new_session(ws)
+    def setup_new_session(websocket)
       Drzyr.state.synchronized do
         session_id = SecureRandom.hex(16)
-        Drzyr.state.connections[ws] = { session_id: session_id, path: nil }
+        Drzyr.state.connections[websocket] = { session_id: session_id, path: nil }
         Drzyr.state.state[session_id] # This initializes the session state with its lock
         Drzyr::Logger.info "New connection opened with session ID: #{session_id}"
       end
     end
 
-    def process_message(ws, event)
+    def process_message(websocket, event)
       data = JSON.parse(event.data)
       path = data['path']
       session_id = nil
 
       Drzyr.state.synchronized do
-        conn_info = Drzyr.state.connections[ws]
+        conn_info = Drzyr.state.connections[websocket]
         return unless conn_info
+
         session_id = conn_info[:session_id]
         conn_info[:path] ||= path
       end
 
-      handle_message(data, path, ws, session_id) if path
+      handle_message(data, path, websocket, session_id) if path
     end
 
-    def cleanup_session(ws)
+    def cleanup_session(websocket)
       Drzyr.state.synchronized do
-        if (conn_info = Drzyr.state.connections.delete(ws))
+        if (conn_info = Drzyr.state.connections.delete(websocket))
           session_id = conn_info[:session_id]
           Drzyr.state.state.delete(session_id)
           Drzyr::Logger.info "Session closed and state cleared for: #{session_id}"
         end
-        Drzyr.state.pending_button_presses.delete(ws)
+        Drzyr.state.pending_button_presses.delete(websocket)
       end
+    end
+
+    # --- Message & Page Rendering ---
+
+    def handle_message(data, path, websocket, session_id)
+      Logger.info "Handling message: #{data.inspect}"
+
+      case data['type']
+      when 'update'
+        handle_update_message(session_id, path, data)
+      when 'button_press'
+        handle_button_press_message(websocket, data)
+      end
+
+      result = Drzyr.rerun_page(path, websocket, session_id)
+      websocket&.send({ type: 'render', **result }.to_json)
+    end
+
+    def render_page(page_config)
+      builder = UIBuilder.new({}, {})
+      builder.instance_exec(&page_config[:block])
+
+      template_data = {
+        server_rendered: build_server_rendered_data(builder),
+        templates: load_templates_into_array,
+        is_reactive: page_config[:type] == :react
+      }
+
+      template_path = File.expand_path('../public/index.mustache', __dir__)
+      Mustache.render(File.read(template_path), template_data)
+    end
+
+    # --- Helper Methods ---
+
+    def handle_update_message(session_id, path, data)
+      session_entry = Drzyr.state.state[session_id]
+      session_entry[:lock].synchronize do
+        session_entry[:data][path][data['widget_id']] = data['value']
+      end
+    end
+
+    def handle_button_press_message(websocket, data)
+      Drzyr.state.synchronized do
+        Drzyr.state.pending_button_presses[websocket] ||= {}
+        Drzyr.state.pending_button_presses[websocket][data['widget_id']] = true
+      end
+    end
+
+    def build_server_rendered_data(builder)
+      {
+        main_content: HtmlRenderer.render(builder.ui_elements),
+        sidebar_content: HtmlRenderer.render(builder.sidebar_elements),
+        navbar_content: HtmlRenderer.render(builder.navbar_elements)
+      }
     end
 
     def load_templates
@@ -131,54 +168,38 @@ module Drzyr
       templates
     end
 
-    def render_page(page_config)
-      # For the initial render, the page state is empty
-      builder = UIBuilder.new({}, {})
-      builder.instance_exec(&page_config[:block])
+    def load_templates_into_array
+      load_templates.map { |name, content| { name: name, content: content } }
+    end
+  end
 
-      server_rendered_data = {
-        main_content: HtmlRenderer.render(builder.ui_elements),
-        sidebar_content: HtmlRenderer.render(builder.sidebar_elements),
-        navbar_content: HtmlRenderer.render(builder.navbar_elements)
-      }
+  # --- Private Module-Level Helpers ---
 
-      templates_array = load_templates.map do |name, content|
-        { name: name, content: content }
+  class << self
+    private
+
+    def find_page_block(path)
+      state.pages.dig(path, :block).tap do |block|
+        Logger.info("No page block found for path: '#{path}'") unless block
       end
-
-      mustache_template_path = File.expand_path('../public/index.mustache', __dir__)
-      mustache_template = File.read(mustache_template_path)
-
-      Mustache.render(mustache_template, {
-        server_rendered: server_rendered_data,
-        templates: templates_array,
-        # Add the new flag here. Only 'react' pages are interactive.
-        is_reactive: page_config[:type] == :react
-      })
     end
 
-    def handle_message(data, path, ws, session_id)
-      Logger.info "Handling message: #{data.inspect}"
-      app_state = Drzyr.state
+    def execute_page_build(page_block, path, websocket, session_id)
+      Logger.info "Rerunning page: '#{path}'"
+      build_ui_for_page(page_block, session_id, path, websocket)
+    rescue StandardError => e
+      Logger.error "Error rendering page '#{path}': #{e.message}\n#{e.backtrace.join("\n")}"
+      { error: { type: 'error_display', message: e.message, backtrace: e.backtrace.join("\n") } }
+    end
 
-      case data['type']
-      when 'update'
-        # Lock only the specific session's data to update its state
-        session_entry = app_state.state[session_id]
-        session_entry[:lock].synchronize do
-          session_entry[:data][path][data['widget_id']] = data['value']
-        end
-      when 'button_press'
-        # Lock the global state to safely update the shared pending_presses hash
-        app_state.synchronized do
-          app_state.pending_button_presses[ws] ||= {}
-          app_state.pending_button_presses[ws][data['widget_id']] = true
-        end
-      end
-
-      # Rerun the page to reflect the state change
-      result = Drzyr.rerun_page(path, ws, session_id)
-      ws&.send({ type: 'render', **result }.to_json)
+    def build_elements(page_block, page_state, pending_presses)
+      builder = UIBuilder.new(page_state, pending_presses)
+      builder.instance_exec(&page_block)
+      {
+        elements: builder.ui_elements,
+        sidebar_elements: builder.sidebar_elements,
+        navbar: builder.navbar_elements
+      }
     end
   end
 end
